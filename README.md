@@ -1,7 +1,4 @@
-[![Build Status](https://travis-ci.org/F-Stack/f-stack.svg?branch=master)](https://travis-ci.org/F-Stack/f-stack)
-
-# F-Stack
-![](F-Stack.png)
+# F-Stack(1.12)
 
 ## Introduction
 
@@ -41,7 +38,7 @@ Currently, besides authorized DNS server of DNSPod, there are various products i
     cd f-stack
     # compile DPDK
     cd dpdk/usertools
-    ./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc
+    ./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc [14]
 
     # Set hugepage
     # single-node system
@@ -50,6 +47,14 @@ Currently, besides authorized DNS server of DNSPod, there are various products i
     # or NUMA
     echo 1024 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
     echo 1024 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
+    
+    # or 2M 
+    echo 4096 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+    echo 4096 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
+
+    # or 2G
+    echo 10 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+    echo 10 > /sys/devices/system/node/node1/hugepages/hugepages-1048576kB/nr_hugepages
 
     # Using Hugepage with the DPDK
     mkdir /mnt/huge
@@ -62,9 +67,10 @@ Currently, besides authorized DNS server of DNSPod, there are various products i
     modprobe uio
     insmod /data/f-stack/dpdk/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
     insmod /data/f-stack/dpdk/x86_64-native-linuxapp-gcc/kmod/rte_kni.ko
+    
     python dpdk-devbind.py --status
     ifconfig eth0 down
-    python dpdk-devbind.py --bind=igb_uio eth0 # assuming that use 10GE NIC and eth0
+    python dpdk-devbind.py --bind=igb_uio eth0   # assuming that use 10GE NIC and eth0
 
     # On Ubuntu, use gawk instead of the default mawk.
     #sudo apt-get install gawk  # or execute `sudo update-alternatives --config awk` to choose gawk.
@@ -91,6 +97,7 @@ for more details, see [nginx guide](https://github.com/F-Stack/f-stack/blob/mast
     cd app/redis-3.2.8/
     make
     make install
+    redis-server -t primary -p 0 -c /data/config.ini ./redis.conf 
 
   If KNI is enabled in the configuration file, you should create a virtual NIC after F-Stack started, and set the ipaddr, netmask, mac addr, route table, etc. These addrs must be same with F-Stack.
 
