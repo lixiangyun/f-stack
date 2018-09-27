@@ -111,10 +111,10 @@ for more details, see [nginx guide](https://github.com/F-Stack/f-stack/blob/mast
 
 #### example 
 
-   cd ./example
-   make
-   ./example/helloworld_epoll --conf config.ini --proc-type=primary   --proc-id=0 port 80
-   ./example/helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 81
+    cd ./example
+    make
+    ./example/helloworld_epoll --conf config.ini --proc-type=primary   --proc-id=0 port 80
+    ./example/helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 81
 
 ## Nginx Testing Result
 
