@@ -95,9 +95,9 @@ for more details, see [nginx guide](https://github.com/F-Stack/f-stack/blob/mast
 #### Redis
 
     cd app/redis-3.2.8/
-    make
-    make install
-    redis-server -t primary -p 0 -c /data/config.ini ./redis.conf 
+    make clean; make -j;make install
+    cd ../..
+    redis-server --conf config.ini --proc-type=primary --proc-id=0  redis.conf
 
   If KNI is enabled in the configuration file, you should create a virtual NIC after F-Stack started, and set the ipaddr, netmask, mac addr, route table, etc. These addrs must be same with F-Stack.
 
@@ -108,6 +108,13 @@ for more details, see [nginx guide](https://github.com/F-Stack/f-stack/blob/mast
     ifconfig veth0 <ipaddr>  netmask <netmask>  broadcast <broadcast> hw ether <mac addr>
     route add -net 0.0.0.0 gw <gateway> dev veth0
     # route add -net ...  # other route rules
+
+#### example 
+
+    cd ./example
+    make
+    ./example/helloworld_epoll --conf config.ini --proc-type=primary   --proc-id=0 port 80
+    ./example/helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 81
 
 ## Nginx Testing Result
 
