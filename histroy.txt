@@ -1,23 +1,26 @@
 
 source 8080.sh
-apt install -y libnuma-dev libssl-dev libpcre3 libpcre3-dev zlib1g-dev gdb
+apt install -y libnuma-dev libssl-dev libpcre3 libpcre3-dev zlib1g-dev gdb make cmake
 
 # ifconfig -a
 ifconfig eth1  192.168.0.121 netmask 255.255.255.0 up
 
 
 cd /root/f-stack-1.12/dpdk/usertools
-export EXTRA_CFLAGS='-O0 -g'
+# export EXTRA_CFLAGS='-O0 -g'
 
-./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc[14][17]
+./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc[14]
 
+# clear cache
+echo 1 > /proc/sys/vm/drop_caches
+echo 2 > /proc/sys/vm/drop_caches
+echo 3 > /proc/sys/vm/drop_caches
 
+echo 8192 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+echo 8192 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
 
-echo 2048 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-echo 2048 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
-
-echo 0 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-echo 0 > /sys/devices/system/node/node1/hugepages/hugepages-1048576kB/nr_hugepages
+echo 4 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+echo 4 > /sys/devices/system/node/node1/hugepages/hugepages-1048576kB/nr_hugepages
 
 cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
 cat /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
@@ -39,47 +42,40 @@ cd /root/f-stack-1.12/dpdk/usertools
 python dpdk-devbind.py --status
 ifconfig ens192 down
 python dpdk-devbind.py --bind=igb_uio ens192
+python dpdk-devbind.py --status
 
 export FF_PATH=/root/f-stack-1.12
 export FF_DPDK=/root/f-stack-1.12/dpdk/x86_64-native-linuxapp-gcc
 cd ../../lib/
-make clean; make -j
+make clean; make -j 4
 
 
 cd /root/f-stack-1.12/app/nginx-1.11.10
 ./configure --prefix=/usr/local/nginx_fstack --with-ff_module
-make clean; make -j; make install
+make -j 4; make install
 cd ../..
+
 /usr/local/nginx_fstack/sbin/nginx
 
 
-
 cd /root/f-stack-1.12/app/redis-3.2.8/
-make clean; make -j;make install
+make clean; make -j 4;make install
 cd ../..
+
+
 redis-server --conf config.ini --proc-type=primary --proc-id=0  redis.conf
-
-
 
 
 cd /root/f-stack-1.12/example
 make; 
 
 
-
-
-./example/helloworld_epoll --conf config.ini --proc-type=primary   --proc-id=0 port 80
-./example/helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 81
-
-
-
-
-
 cd example; make ; cd -
 
 ./helloworld_epoll --conf config.ini --proc-type=primary   --proc-id=0 port 80
-./helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 81
-
+./helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 80
+./helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=2 port 80
+./helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=3 port 80
 
 
 
