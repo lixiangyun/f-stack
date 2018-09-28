@@ -92,7 +92,7 @@ int loop(void *arg)
         } else if (event.filter == EVFILT_READ) {
             char buf[256];
             size_t readlen = ff_read(clientfd, buf, sizeof(buf));
-
+            printf("recv request!\n");
             ff_write(clientfd, html, sizeof(html));
         } else {
             printf("unknown event: %8.8X\n", event.flags);
@@ -102,6 +102,9 @@ int loop(void *arg)
 
 int main(int argc, char * argv[])
 {
+    int i;
+    short port;
+    
     ff_init(argc, argv);
 
     sockfd = ff_socket(AF_INET, SOCK_STREAM, 0);
@@ -111,10 +114,20 @@ int main(int argc, char * argv[])
         exit(1);
     }
 
+    for ( i = 0 ; i < argc ; i++ )
+    {
+        if ( 0 == strcmp(argv[i],"port") )
+        {
+            port = (short)atoi(argv[i+1]);
+        }
+    }
+
+    printf("port :%d\n", port);
+
     struct sockaddr_in my_addr;
     bzero(&my_addr, sizeof(my_addr));
     my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(80);
+    my_addr.sin_port = htons(port);
     my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     int ret = ff_bind(sockfd, (struct linux_sockaddr *)&my_addr, sizeof(my_addr));
