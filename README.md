@@ -40,6 +40,10 @@ Currently, besides authorized DNS server of DNSPod, there are various products i
     cd dpdk/usertools
     ./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc [14]
 
+    # compile DPDK with debug 
+    export EXTRA_CFLAGS='-O0 -g'
+    ./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc [14]
+
     # Set hugepage
     # single-node system
     echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
@@ -80,6 +84,10 @@ Currently, besides authorized DNS server of DNSPod, there are various products i
     export FF_DPDK=/data/f-stack/dpdk/x86_64-native-linuxapp-gcc
     cd ../../lib/
     make
+    
+    # Compile F-Stack with debug
+    vi Makefile
+    DEBUG=-O0 -gdwarf-2 -g3
 
 #### Nginx
 
@@ -115,6 +123,10 @@ for more details, see [nginx guide](https://github.com/F-Stack/f-stack/blob/mast
     make
     ./example/helloworld_epoll --conf config.ini --proc-type=primary   --proc-id=0 port 80
     ./example/helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=1 port 81
+
+    # enable debug
+    vi Makefile
+    DEBUG=-O0 -gdwarf-2 -g3
 
 ## Nginx Testing Result
 
