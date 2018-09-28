@@ -44,6 +44,11 @@ Currently, besides authorized DNS server of DNSPod, there are various products i
     export EXTRA_CFLAGS='-O0 -g'
     ./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc [14]
 
+    # clear cache
+    echo 1 > /proc/sys/vm/drop_caches
+    echo 2 > /proc/sys/vm/drop_caches
+    echo 3 > /proc/sys/vm/drop_caches
+
     # Set hugepage
     # single-node system
     echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
