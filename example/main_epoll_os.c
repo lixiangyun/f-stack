@@ -16,40 +16,7 @@
 
 #define MAX_EVENTS 512
 
-
 int sockfd;
-
-char html[] = 
-"HTTP/1.1 200 OK\r\n"
-"Server: F-Stack\r\n"
-"Date: Sat, 25 Feb 2017 09:26:33 GMT\r\n"
-"Content-Type: text/html\r\n"
-"Content-Length: 439\r\n"
-"Last-Modified: Tue, 21 Feb 2017 09:44:03 GMT\r\n"
-"Connection: keep-alive\r\n"
-"Accept-Ranges: bytes\r\n"
-"\r\n"
-"<!DOCTYPE html>\r\n"
-"<html>\r\n"
-"<head>\r\n"
-"<title>Welcome to F-Stack!</title>\r\n"
-"<style>\r\n"
-"    body {  \r\n"
-"        width: 35em;\r\n"
-"        margin: 0 auto; \r\n"
-"        font-family: Tahoma, Verdana, Arial, sans-serif;\r\n"
-"    }\r\n"
-"</style>\r\n"
-"</head>\r\n"
-"<body>\r\n"
-"<h1>Welcome to F-Stack!</h1>\r\n"
-"\r\n"
-"<p>For online documentation and support please refer to\r\n"
-"<a href=\"http://F-Stack.org/\">F-Stack.org</a>.<br/>\r\n"
-"\r\n"
-"<p><em>Thank you for using F-Stack.</em></p>\r\n"
-"</body>\r\n"
-"</html>";
 
 pthread_t tid[512];
 
@@ -79,9 +46,9 @@ void * loop(void * arg)
     for (;;)
     {
         /* Wait for events to happen */
-        int nevents = epoll_wait(epfd,  events, MAX_EVENTS, 0);
+        int nevents = epoll_wait(epfd,  events, MAX_EVENTS, -1);
         int i;
-        
+
         for ( i = 0; i < nevents ; ++i ) 
         {
             /* Handle new connect */
@@ -118,20 +85,18 @@ void * loop(void * arg)
                 } 
                 else if (events[i].events & EPOLLIN )
                 {
-                    char buf[256];
+                    char buf[4096];
                     size_t writelen;
                     size_t readlen = read( events[i].data.fd, buf, sizeof(buf));
-                    //printf("request read len %d.\n", readlen);
                     if( readlen > 0 )
                     {
-                        writelen = write( events[i].data.fd, html, sizeof(html));
-                        //printf("response write len %d.\n", readlen);
+                        writelen = write( events[i].data.fd, buf, readlen);
                     } 
                     else 
                     {
                         epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                         close( events[i].data.fd);
-        
+
                         printf("connect %d close.\n", events[i].data.fd);
                     }
                 }

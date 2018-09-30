@@ -8,7 +8,7 @@ ifeq ($(FF_DPDK),)
 	FF_DPDK=${TOPDIR}/dpdk/x86_64-native-linuxapp-gcc
 endif
 
-DEBUG=-O0 -gdwarf-2 -g3
+#DEBUG=-O0 -gdwarf-2 -g3
 
 ifndef DEBUG
 HOST_CFLAGS = -O2
