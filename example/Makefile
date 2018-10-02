@@ -25,6 +25,7 @@ all:
 	cc ${HOST_CFLAGS} -I../lib -o ${TARGET} main.c ${LIBS}
 	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll main_epoll.c ${LIBS}
 	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_os main_epoll_os.c ${LIBS}
+	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_m main_epoll_m.c ${LIBS}
 
 .PHONY: clean
 clean:
