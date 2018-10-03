@@ -1,14 +1,25 @@
 #include <stdio.h>
-#include <sys/ioctl.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <strings.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/eventfd.h>
+#include <sys/epoll.h>
+#include <sys/ioctl.h>
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <assert.h>
+#include <pthread.h>
+
+#include "ff_config.h"
+#include "ff_api.h"
+#include "ff_epoll.h"
+
+
 
 #define FF_MAX_EVENTS  512
 #define BUFF_MAX_LEN   4096
@@ -124,7 +135,7 @@ ssize_t ss_buff_m_readv(struct ss_buff_m * pbuff, const struct iovec *iov, int i
     {
         tmp = ss_buff_m_read(pbuff, iov[i].iov_base, iov[i].iov_len );
         cnt += tmp;
-        if ( tmp < iov.iov_len )
+        if ( tmp < iov[i].iov_len )
         {
             break;
         }
@@ -174,7 +185,7 @@ ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int 
     {
         tmp = ss_buff_m_write(pbuff, iov[i].iov_base, iov[i].iov_len );
         cnt += tmp;
-        if ( tmp < iov.iov_len )
+        if ( tmp < iov[i].iov_len )
         {
             break;
         }
@@ -1146,7 +1157,7 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
         struct ss_epoll_data_s * p_ss_epoll_data = (struct ss_epoll_data_s *)events[i].data.ptr;
         if ( 1 == p_ss_epoll_data->type )
         {
-            struct ss_socket_m * p_ss_socket = p_ss_epoll_data->pdata;
+            struct ss_socket_m * p_ss_socket = (struct ss_socket_m *)p_ss_epoll_data->pdata;
 
             pevents[i].events   = p_ss_socket->event_s | events[i].events;
             pevents[i].data.fd  = p_ss_socket->socket_idx;
@@ -1245,7 +1256,7 @@ void ff_proccess_once( struct ss_call * pcall )
     ret = sem_post(&pcall->sem);
     if ( ret < 0 )
     {
-        printf("sem post failed!\n")
+        printf("sem post failed!\n");
     }
 }
 
@@ -1282,7 +1293,7 @@ void ff_epoll_loop()
         struct ff_event_data *pdata = (struct ff_event_data *)events[i].data.ptr;
         pdata->ff_events = events[i].events;
 
-        pdata->ff_callback(pdata)
+        pdata->ff_callback(pdata);
     }
 }
 
@@ -1303,9 +1314,9 @@ int ss_init(int argc, char * argv[])
     int ret;
     int i;
 
-    memset(g_ss_socket,0,sizeof(g_ss_socket));
-    memset(g_ff_2_ss,0,sizeof(g_ff_2_ss));
-    memset(g_ss_call_que,0,sizeof(g_ss_call_que));
+    memset(&g_ss_socket,  0,sizeof(g_ss_socket));
+    memset(&g_ff_2_ss,    0,sizeof(g_ff_2_ss));
+    memset(&g_ss_call_que,0,sizeof(g_ss_call_que));
 
     for ( i = SOCK_REL_IDX ; i < SOCK_MAX_NUM ; i++ )
     {
