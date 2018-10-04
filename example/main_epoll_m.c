@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <pthread.h>
+#include <semaphore.h>
 
 #include "ff_config.h"
 #include "ff_api.h"
@@ -192,7 +193,22 @@ ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int 
     }
 
     return cnt;
+}
 
+void ss_buff_m_clean(struct ss_buff_m * pbuff)
+{
+    struct ss_buff * pbuff;
+    struct ss_buff * pnext;
+
+    for ( pbuff = pbuff->pnext; pbuff != NULL ; pbuff = pnext )
+    {
+        pnext = pbuff->pnext;
+        memset( pbuff, 0, sizeof(struct ss_buff) );
+        free((void *)pbuff);
+    }
+
+    pbuff->pnext = NULL;
+    pbuff->ptail = NULL;
 }
 
 enum ss_socket_type {
@@ -363,7 +379,7 @@ int ss_remote_call( struct ss_call_s * pcall )
     ret = sem_init(&pcall->sem, 0, 0);
     if ( ret < 0 )
     {
-        printf("sem init failed!")
+        printf("sem init failed!");
         return -1;
     }
     pcall->pnext = NULL;
@@ -385,7 +401,7 @@ int ss_remote_call( struct ss_call_s * pcall )
     ret = sem_wait(&pcall->sem);
     if ( ret < 0 )
     {
-        printf("sem wait failed!")
+        printf("sem wait failed!");
         return -1;
     }
 
@@ -420,8 +436,8 @@ struct ss_socket_m * ss_alloc_socket_fd(void)
     p_ss_socket->event_s = 0;
     p_ss_socket->paccept = NULL;
 
-    p_ss_socket->pnext = NULL;
-    p_ss_socket->ptail = NULL;
+    ss_buff_m_clean(&p_ss_socket->buff_r);
+    ss_buff_m_clean(&p_ss_socket->buff_w);
 
     pthread_mutex_unlock(&g_ss_lock);
 
@@ -449,7 +465,7 @@ int ss_socket(int domain, int type, int protocol)
     ss_parm.type     = type;
 
     ss_call.call_idx = SS_CALL_SOCKET;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -459,11 +475,6 @@ int ss_socket(int domain, int type, int protocol)
         return -1;
     }
     p_ss_socket->socket_ff = ss_call.ret;
-    p_ss_socket->buff_r.pnext = NULL;
-    p_ss_socket->buff_r.ptail = NULL;
-
-    p_ss_socket->buff_w.pnext = NULL;
-    p_ss_socket->buff_w.ptail = NULL;
 
     return p_ss_socket->socket_idx;
 }
@@ -490,7 +501,7 @@ int ss_setsockopt(int s, int level, int optname, const void *optval, socklen_t o
     ss_parm.optlen  = optlen;
 
     ss_call.call_idx = SS_CALL_SETSOCKOPT;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -526,7 +537,7 @@ int ss_getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen
     ss_parm.optlen  = optlen;
 
     ss_call.call_idx = SS_CALL_GETSOCKOPT;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -559,7 +570,7 @@ int ss_listen(int s, int backlog)
     ss_parm.backlog = backlog;
 
     ss_call.call_idx = SS_CALL_LISTEN;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -596,7 +607,7 @@ int ss_bind(int s, const struct sockaddr *addr, socklen_t addrlen)
     ss_parm.addrlen = addrlen;
 
     ss_call.call_idx = SS_CALL_BIND;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -630,7 +641,7 @@ int ss_connect(int s, const struct sockaddr *name, socklen_t namelen)
     ss_parm.namelen = namelen;
 
     ss_call.call_idx = SS_CALL_CONNECT;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -662,7 +673,7 @@ int ss_close(int fd)
     ss_parm.fd = p_ss_socket->socket_ff;
 
     ss_call.call_idx = SS_CALL_CLOSE;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -674,17 +685,8 @@ int ss_close(int fd)
 
     p_ss_socket->socket_type = SS_UNUSED;
 
-    struct ss_buff * pbuff;
-    struct ss_buff * pnext;
-    for ( pbuff = p_ss_socket->pnext; pbuff != NULL ; pbuff = pnext )
-    {
-        pnext = pbuff->pnext;
-
-        memset( pbuff, 0, sizeof(struct ss_buff) );
-        free((void *)pbuff);
-    }
-    p_ss_socket->pnext = NULL;
-    p_ss_socket->ptail = NULL;
+    ss_buff_m_clean(&p_ss_socket->buff_r);
+    ss_buff_m_clean(&p_ss_socket->buff_w);
 
     pthread_mutex_unlock(&p_ss_socket->lock);
 
@@ -711,7 +713,7 @@ int ss_getpeername(int s, struct sockaddr *name, socklen_t *namelen)
     ss_parm.namelen  = namelen;
 
     ss_call.call_idx = SS_CALL_GETPEERNAME;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -745,7 +747,7 @@ int ss_getsockname(int s, struct sockaddr *name, socklen_t *namelen)
     ss_parm.namelen  = namelen;
 
     ss_call.call_idx = SS_CALL_GETSOCKNAME;
-    ss_call.param    = (void *)ss_parm;
+    ss_call.param    = (void *)&ss_parm;
 
     ret = ss_remote_call(&ss_call);
     if ( ret < 0)
@@ -806,7 +808,7 @@ ssize_t ss_read(int fd, void *buf, size_t nbytes)
     if ( p_ss_socket->socket_type == SS_UNUSED )
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
-        printf("socket has been free! %d\n", s);
+        printf("socket has been free! %d\n", fd);
         return -1;
     }
 
@@ -833,7 +835,7 @@ ssize_t ss_readv(int fd, const struct iovec *iov, int iovcnt)
     if ( p_ss_socket->socket_type == SS_UNUSED )
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
-        printf("socket has been free! %d\n", s);
+        printf("socket has been free! %d\n", fd);
         return -1;
     }
 
@@ -860,7 +862,7 @@ ssize_t ss_write(int fd, const void *buf, size_t nbytes)
     if ( p_ss_socket->socket_type == SS_UNUSED )
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
-        printf("socket has been free! %d\n", s);
+        printf("socket has been free! %d\n", fd);
         return -1;
     }
 
@@ -887,7 +889,7 @@ ssize_t ss_writev(int fd, const struct iovec *iov, int iovcnt)
     if ( p_ss_socket->socket_type == SS_UNUSED )
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
-        printf("socket has been free! %d\n", s);
+        printf("socket has been free! %d\n", fd);
         return -1;
     }
 
@@ -920,14 +922,13 @@ void ff_epoll_callback_accept( struct ff_event_data * pdata )
 
     for (;;)
     {
-        struct ss_accept_s * tmp;
         ff_client_fd = ff_accept(pdata->ff_socket_fd, NULL, NULL);
         if ( ff_client_fd < 0 )
         {
             break;
         }
 
-        p_ss_accept = (struct ss_accept_s *)malloc(struct ss_accept_s);
+        p_ss_accept = (struct ss_accept_s *)malloc(sizeof(struct ss_accept_s));
         p_ss_accept->socket_ff  = ff_client_fd;
 
         pthread_mutex_lock(&p_ss_socket->lock);
@@ -1045,7 +1046,7 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
 
     if ( ( SOCK_REL_IDX <= fd ) && ( fd < SOCK_MAX_NUM ) )
     {
-        struct ff_event_data * pdata = NULL;
+        struct ff_event_data * p_ff_event_data = NULL;
         struct ss_call_s ss_call;
         struct ss_parm_epoll_ctl ss_parm;
         struct ss_socket_m * p_ss_socket = &g_ss_socket[fd];
@@ -1060,8 +1061,8 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
 
         if ( op != EPOLL_CTL_DEL )
         {
-            pdata = (struct ff_event_data *)malloc(sizeof(struct ff_event_data));
-            if ( NULL == pdata )
+            p_ff_event_data = (struct ff_event_data *)malloc(sizeof(struct ff_event_data));
+            if ( NULL == p_ff_event_data )
             {
                 pthread_mutex_unlock(&p_ss_socket->lock);
                 printf("malloc size failed! %d\n", sizeof(struct ff_event_data));
@@ -1070,25 +1071,25 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
 
             if ( SS_SERVER == p_ss_socket->socket_type )
             {
-                pdata->ff_callback  = ff_epoll_callback_accept;
+                p_ff_event_data->ff_callback  = ff_epoll_callback_accept;
             }
             else
             {
-                pdata->ff_callback  = ff_epoll_callback_connect;
+                p_ff_event_data->ff_callback  = ff_epoll_callback_connect;
             }
 
-            pdata->ff_events    = 0;
-            pdata->ff_socket_fd = p_ss_socket->socket_ff;
-            pdata->ss_socket_s  = p_ss_socket;
+            p_ff_event_data->ff_events    = 0;
+            p_ff_event_data->ff_socket_fd = p_ss_socket->socket_ff;
+            p_ff_event_data->ss_socket_s  = p_ss_socket;
         }
 
         ss_parm.ff_socket_fd  = p_ss_socket->socket_ff;
         ss_parm.ff_events     = pevent->events;
-        ss_parm.ff_event_data = pdata;
+        ss_parm.ff_event_data = p_ff_event_data;
         ss_parm.ff_opt        = op;
 
         ss_call.call_idx = SS_CALL_EPOLL_CTL;
-        ss_call.param    = (void *)ss_parm;
+        ss_call.param    = (void *)&ss_parm;
 
         ret = ss_remote_call(&ss_call);
         if ( ret < 0)
@@ -1102,7 +1103,6 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
         struct ss_epoll_data_s * pdata;
 
         pdata = (struct ss_epoll_data_s *)malloc(sizeof(struct ss_epoll_data_s));
-
         pdata->type   = 1;
         pdata->fd     = p_ss_socket->event_fd;
         pdata->pdata  = (void *)p_ss_socket;
@@ -1120,10 +1120,9 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
         struct ss_epoll_data_s * pdata;
 
         pdata = (struct ss_epoll_data_s *)malloc(sizeof(struct ss_epoll_data_s));
-
         pdata->type   = 0;
         pdata->fd     = fd;
-        pdata->pdata  = pevent->data->ptr;
+        pdata->pdata  = pevent->data.ptr;
 
         event.events  = pevent->events;
         event.data.ptr = (void *)pdata;
