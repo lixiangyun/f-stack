@@ -195,20 +195,20 @@ ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int 
     return cnt;
 }
 
-void ss_buff_m_clean(struct ss_buff_m * pbuff)
+void ss_buff_m_clean(struct ss_buff_m * pbuffm)
 {
     struct ss_buff * pbuff;
     struct ss_buff * pnext;
 
-    for ( pbuff = pbuff->pnext; pbuff != NULL ; pbuff = pnext )
+    for ( pbuff = pbuffm->pnext; pbuff != NULL ; pbuff = pnext )
     {
         pnext = pbuff->pnext;
         memset( pbuff, 0, sizeof(struct ss_buff) );
         free((void *)pbuff);
     }
 
-    pbuff->pnext = NULL;
-    pbuff->ptail = NULL;
+    pbuffm->pnext = NULL;
+    pbuffm->ptail = NULL;
 }
 
 enum ss_socket_type {
@@ -278,7 +278,7 @@ struct ss_parm_setsockopt {
     int s;
     int level;
     int optname;
-    void *optval;
+    const void *optval;
     socklen_t optlen;
 };
 
@@ -297,13 +297,13 @@ struct ss_parm_listen {
 
 struct ss_parm_bind {
     int s;
-    struct sockaddr *addr;
+    const struct sockaddr *addr;
     socklen_t addrlen;
 };
 
 struct ss_parm_connect {
     int s;
-    struct sockaddr *name;
+    const struct sockaddr *name;
     socklen_t namelen;
 };
 
@@ -661,13 +661,13 @@ int ss_close(int fd)
     int ret;
     struct ss_call_s ss_call;
     struct ss_parm_close ss_parm;
-    struct ss_socket_m * p_ss_socket = &g_ss_socket[s];
+    struct ss_socket_m * p_ss_socket = &g_ss_socket[fd];
 
     pthread_mutex_lock(&p_ss_socket->lock);
     if ( p_ss_socket->socket_type == SS_UNUSED )
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
-        printf("socket has been free! %d\n", s);
+        printf("socket has been free! %d\n", fd);
         return -1;
     }
     ss_parm.fd = p_ss_socket->socket_ff;
@@ -1065,7 +1065,7 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
             if ( NULL == p_ff_event_data )
             {
                 pthread_mutex_unlock(&p_ss_socket->lock);
-                printf("malloc size failed! %d\n", sizeof(struct ff_event_data));
+                printf("malloc size failed! %u\n", sizeof(struct ff_event_data));
                 return -1;
             }
 
@@ -1180,9 +1180,10 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
     return cnt;
 }
 
-void ff_proccess_once( struct ss_call * pcall )
+void ff_proccess_once( struct ss_call_s * pcall )
 {
     int ret = 0;
+
     pcall->ret = 0;
 
     switch (pcall->call_idx)
@@ -1261,7 +1262,7 @@ void ff_proccess_once( struct ss_call * pcall )
 
 void ff_proccess_call()
 {
-    struct ss_call * pcall;
+    struct ss_call_s * pcall;
     if ( 0 == g_ss_call_que.calls )
     {
         return;
