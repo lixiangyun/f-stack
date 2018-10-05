@@ -1065,7 +1065,7 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
             if ( NULL == p_ff_event_data )
             {
                 pthread_mutex_unlock(&p_ss_socket->lock);
-                printf("malloc size failed! %u\n", sizeof(struct ff_event_data));
+                printf("malloc size failed! %lu\n", sizeof(struct ff_event_data));
                 return -1;
             }
 
