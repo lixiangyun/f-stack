@@ -21,25 +21,8 @@
 #include "ff_epoll.h"
 
 
+#include "ss_api.h"
 
-#define FF_MAX_EVENTS  512
-#define BUFF_MAX_LEN   4096
-
-#define SOCK_MAX_NUM   0xffff
-#define SOCK_REL_IDX   0xff00
-
-
-struct ss_buff {
-    char   body[BUFF_MAX_LEN];
-    int    write;
-    int    read;
-    struct ss_buff * pnext;
-};
-
-struct ss_buff_m {
-    struct ss_buff * pnext;
-    struct ss_buff * ptail;
-};
 
 ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes)
 {
@@ -155,6 +138,7 @@ ssize_t ss_buff_m_write(struct ss_buff_m * pbuff, const char *buf, size_t nbytes
     {
         if ( NULL == pcur )
         {
+alloc:
             pcur = (struct ss_buff *)malloc(sizeof(struct ss_buff));
             pcur->read  = 0;
             pcur->write = 0;
@@ -168,6 +152,10 @@ ssize_t ss_buff_m_write(struct ss_buff_m * pbuff, const char *buf, size_t nbytes
         }
 
         size_t tmp = ss_buff_write(pcur, buf + cnt, remain );
+        if ( 0 == tmp )
+        {
+            goto alloc;
+        }
 
         cnt    += tmp;
         remain -= tmp;
@@ -217,7 +205,6 @@ enum ss_socket_type {
     SS_CLIENT,
 };
 
-
 struct ss_accept_s {
     int socket_ff;
     struct ss_accept_s * pnext;
@@ -265,7 +252,7 @@ enum ss_call_idx {
     SS_CALL_CLOSE,
     SS_CALL_GETPEERNAME,
     SS_CALL_GETSOCKNAME,
-    SS_CALL_EPOLL_CTL,
+    SS_CALL_EPOLL_CTL
 };
 
 struct ss_parm_socket {
@@ -344,33 +331,6 @@ struct ss_call_que g_ss_call_que;
 int g_ff_epfd = -1;
 
 
-int ss_socket(int domain, int type, int protocol);
-
-int ss_setsockopt(int s, int level, int optname, const void *optval, socklen_t optlen);
-
-int ss_getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen);
-
-int ss_listen(int s, int backlog);
-
-int ss_bind(int s, const struct sockaddr *addr, socklen_t addrlen);
-
-int ss_connect(int s, const struct sockaddr *name, socklen_t namelen);
-
-int ss_close(int fd);
-
-int ss_getpeername(int s, struct sockaddr *name, socklen_t *namelen);
-
-int ss_getsockname(int s, struct sockaddr *name, socklen_t *namelen);
-
-int ss_accept(int s, struct sockaddr *addr, socklen_t *addrlen);
-
-ssize_t ss_read(int d, void *buf, size_t nbytes);
-
-ssize_t ss_readv(int fd, const struct iovec *iov, int iovcnt);
-
-ssize_t ss_write(int fd, const void *buf, size_t nbytes);
-
-ssize_t ss_writev(int fd, const struct iovec *iov, int iovcnt);
 
 int ss_remote_call( struct ss_call_s * pcall )
 {
@@ -420,9 +380,9 @@ struct ss_socket_m * ss_alloc_socket_fd(void)
     for ( i = SOCK_REL_IDX ; i < SOCK_MAX_NUM ; i++ )
     {
         p_ss_socket = (struct ss_socket_m *)&g_ss_socket[i];
-        if ( p_ss_socket->socket_type != SS_UNUSED )
+        if ( p_ss_socket->socket_type == SS_UNUSED )
         {
-            continue;
+            break;
         }
     }
     if ( i == SOCK_MAX_NUM )
@@ -928,6 +888,8 @@ void ff_epoll_callback_accept( struct ff_event_data * pdata )
             break;
         }
 
+        printf("ff_epoll_callback_accept ff_client_fd %d !\n", ff_client_fd);
+
         p_ss_accept = (struct ss_accept_s *)malloc(sizeof(struct ss_accept_s));
         p_ss_accept->socket_ff  = ff_client_fd;
 
@@ -951,6 +913,7 @@ void ff_epoll_callback_accept( struct ff_event_data * pdata )
 
 void ff_epoll_callback_connect(struct ff_event_data * pdata )
 {
+    int ret;
     struct ss_socket_m * p_ss_socket = pdata->ss_socket_s;
     char stbuf[4096];
 
@@ -960,53 +923,49 @@ void ff_epoll_callback_connect(struct ff_event_data * pdata )
         return;
     }
 
-    pthread_mutex_lock(&p_ss_socket->lock);
-
-    if ( pdata->ff_events | EPOLLIN )
+    ret = pthread_mutex_trylock(&p_ss_socket->lock);
+    if ( ret != 0 )
     {
-        int tmp;
-        int cnt = 0;
-        int remain;
+        return;
+    }
+
+    if ( pdata->ff_events & EPOLLIN )
+    {
+        ssize_t tmp;
+        ssize_t cnt = 0;
+        ssize_t remain;
 
         remain = ff_read(pdata->ff_socket_fd, stbuf, sizeof(stbuf));
-        for ( ; remain > 0 ; )
-        {
-            tmp = ss_buff_m_write(&p_ss_socket->buff_r, &stbuf[cnt], remain);
-            remain = remain - tmp;
-            cnt    = cnt + tmp;
-        }
-
         if ( remain > 0 )
         {
-            p_ss_socket->event_s = p_ss_socket->event_s | EPOLLIN;
-            if ( eventfd_write(p_ss_socket->event_fd, (eventfd_t)(1) ) < 0 )
-            {
-                printf("eventfd_write failed! errno = %d\n", errno );
-            }
+            ss_buff_m_write(&p_ss_socket->buff_r, stbuf, remain);
+        }
+        
+        p_ss_socket->event_s = p_ss_socket->event_s | EPOLLIN;
+        if ( eventfd_write(p_ss_socket->event_fd, (eventfd_t)(1) ) < 0 )
+        {
+            printf("eventfd_write failed! errno = %d\n", errno );
         }
     }
 
-    if ( pdata->ff_events | EPOLLOUT )
+    if ( pdata->ff_events & EPOLLOUT )
     {
-        int tmp;
-        int cnt = 0;
-        int remain;
+        ssize_t tmp;
+        ssize_t cnt = 0;
+        ssize_t remain;
 
         remain = ss_buff_m_read(&p_ss_socket->buff_w, stbuf, sizeof(stbuf));
         for ( ; remain > 0 ; )
         {
-            tmp = ff_write(pdata->ff_socket_fd, stbuf, sizeof(stbuf));
+            tmp = ff_write(pdata->ff_socket_fd, &stbuf[cnt], remain );
             remain = remain - tmp;
-            cnt    = cnt + tmp;
+            cnt    = cnt    + tmp;
         }
 
-        if ( remain < sizeof(stbuf) )
+        p_ss_socket->event_s = p_ss_socket->event_s | EPOLLOUT;
+        if ( eventfd_write(p_ss_socket->event_fd, (eventfd_t)(1) ) < 0 )
         {
-            p_ss_socket->event_s = p_ss_socket->event_s | EPOLLOUT;
-            if ( eventfd_write(p_ss_socket->event_fd, (eventfd_t)(1) ) < 0 )
-            {
-                printf("eventfd_write failed! errno = %d\n", errno );
-            }
+            printf("eventfd_write failed! errno = %d\n", errno );
         }
     }
 
@@ -1024,7 +983,7 @@ int ss_epoll_create(int size)
 {
     int epfd;
 
-    epfd = epoll_create(size);
+    epfd = epoll_create1(EPOLL_CLOEXEC);
     if ( epfd < 0 )
     {
         printf("ss epoll create failed! %d\n", errno );
@@ -1158,7 +1117,7 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
         {
             struct ss_socket_m * p_ss_socket = (struct ss_socket_m *)p_ss_epoll_data->pdata;
 
-            pevents[i].events   = p_ss_socket->event_s | events[i].events;
+            pevents[i].events   = p_ss_socket->event_s;
             pevents[i].data.fd  = p_ss_socket->socket_idx;
 
             while(1)
@@ -1242,13 +1201,14 @@ void ff_proccess_once( struct ss_call_s * pcall )
             event.events   = parm->ff_events;
             ret = ff_epoll_ctl(g_ff_epfd, parm->ff_opt, parm->ff_socket_fd, &event);
         }break;
-
         default:
         {
             printf("call index is invaild! %d\n", pcall->call_idx );
             return;
         }
     }
+
+    printf("ff remote proc %d , parm %p, ret %d \n", pcall->call_idx, pcall->param , pcall->ret );
 
     pcall->ret = ret;
     pcall->err = errno;
@@ -1304,7 +1264,7 @@ int ff_loop(void *arg)
     return 0;
 }
 
-void ss_run()
+void ss_run(void)
 {
     ff_run(ff_loop, NULL);
 }
