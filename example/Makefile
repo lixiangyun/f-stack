@@ -8,7 +8,7 @@ ifeq ($(FF_DPDK),)
 	FF_DPDK=${TOPDIR}/dpdk/x86_64-native-linuxapp-gcc
 endif
 
-#DEBUG=-O0 -gdwarf-2 -g3
+DEBUG=-O0 -gdwarf-2 -g3
 
 ifndef DEBUG
 HOST_CFLAGS = -O2
@@ -24,8 +24,7 @@ TARGET="helloworld"
 all:
 	cc ${HOST_CFLAGS} -I../lib -o ${TARGET} main.c ${LIBS}
 	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll main_epoll.c ${LIBS}
-	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_os main_epoll_os.c ${LIBS}
-	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_m main_epoll_m.c ${LIBS}
+	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_cs main_epoll_cs.c main_epoll_m.c ${LIBS}
 
 .PHONY: clean
 clean:

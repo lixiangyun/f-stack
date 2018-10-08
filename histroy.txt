@@ -6,7 +6,7 @@ apt install -y libnuma-dev libssl-dev libpcre3 libpcre3-dev zlib1g-dev gdb make 
 ifconfig eth1  192.168.0.121 netmask 255.255.255.0 up
 
 
-cd /root/f-stack-1.12/dpdk/usertools
+cd /root/f-stack/dpdk/usertools
 # export EXTRA_CFLAGS='-O0 -g'
 
 ./dpdk-setup.sh # compile with x86_64-native-linuxapp-gcc[14]
@@ -16,11 +16,11 @@ echo 1 > /proc/sys/vm/drop_caches
 echo 2 > /proc/sys/vm/drop_caches
 echo 3 > /proc/sys/vm/drop_caches
 
-echo 8192 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-echo 8192 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
+echo 4096 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
+echo 4096 > /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
 
-echo 4 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
-echo 4 > /sys/devices/system/node/node1/hugepages/hugepages-1048576kB/nr_hugepages
+echo 0 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+echo 0 > /sys/devices/system/node/node1/hugepages/hugepages-1048576kB/nr_hugepages
 
 cat /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
 cat /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages
@@ -35,22 +35,22 @@ echo 0 > /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 
 modprobe uio
-insmod /root/f-stack-1.12/dpdk/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
-insmod /root/f-stack-1.12/dpdk/x86_64-native-linuxapp-gcc/kmod/rte_kni.ko
+insmod /root/f-stack/dpdk/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
+insmod /root/f-stack/dpdk/x86_64-native-linuxapp-gcc/kmod/rte_kni.ko
 
-cd /root/f-stack-1.12/dpdk/usertools
+cd /root/f-stack/dpdk/usertools
 python dpdk-devbind.py --status
 ifconfig ens192 down
 python dpdk-devbind.py --bind=igb_uio ens192
 python dpdk-devbind.py --status
 
-export FF_PATH=/root/f-stack-1.12
-export FF_DPDK=/root/f-stack-1.12/dpdk/x86_64-native-linuxapp-gcc
+export FF_PATH=/root/f-stack
+export FF_DPDK=/root/f-stack/dpdk/x86_64-native-linuxapp-gcc
 cd ../../lib/
 make clean; make -j 4
 
 
-cd /root/f-stack-1.12/app/nginx-1.11.10
+cd /root/f-stack/app/nginx-1.11.10
 ./configure --prefix=/usr/local/nginx_fstack --with-ff_module
 make -j 4; make install
 cd ../..
@@ -58,7 +58,7 @@ cd ../..
 /usr/local/nginx_fstack/sbin/nginx
 
 
-cd /root/f-stack-1.12/app/redis-3.2.8/
+cd /root/f-stack/app/redis-3.2.8/
 make clean; make -j 4;make install
 cd ../..
 
@@ -66,7 +66,7 @@ cd ../..
 redis-server --conf config.ini --proc-type=primary --proc-id=0  redis.conf
 
 
-cd /root/f-stack-1.12/example
+cd /root/f-stack/example
 make; 
 
 
@@ -77,6 +77,5 @@ cd example; make ; cd -
 ./helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=2 port 80
 ./helloworld_epoll --conf config.ini --proc-type=secondary --proc-id=3 port 80
 
-
-
-unset http_proxy; unset HTTPS_PROXY ; unset https_proxy; unset HTTP_PROXY
+./helloworld_epoll_cs --conf config.ini --proc-type=primary --proc-id=0 server port 80
+./helloworld_epoll_cs --conf config.ini --proc-type=secondary --proc-id=1 client addr 192.168.0.124 port 80

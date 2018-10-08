@@ -119,8 +119,8 @@ void * server_socket_process(void * arg)
             else
             { 
                 char buf[BUFF_MAX_LEN];
-                size_t writelen = 0;
-                size_t readlen  = 0;
+                ssize_t writelen = 0;
+                ssize_t readlen  = 0;
 
                 if (events[i].events & EPOLLERR ) 
                 {
@@ -380,15 +380,20 @@ int client_init(int argc, char * argv[])
     return 0;
 }
 
-int main(int argc, char * argv[])
+int g_argc = 0;
+char ** g_argv;
+
+void * main_cs(void * arg)
 {
     int i;
     int flag = 0;
     pthread_t tid;
+    int argc = g_argc;
+    char ** argv = g_argv;
 
-    ss_init(argc, argv);
+    sleep(2);
 
-    pthread_create(&tid, NULL, (void *(*)(void*))ss_run, NULL);
+    pthread_create(&tid, NULL, stat_display, NULL);
 
     for ( i = 0 ; i < argc ; i++ )
     {
@@ -403,8 +408,6 @@ int main(int argc, char * argv[])
         }
     }
 
-    pthread_create(&tid, NULL, stat_display, NULL);
-
     if ( flag )
     {
         server_init(argc, argv);
@@ -413,7 +416,21 @@ int main(int argc, char * argv[])
     {
         client_init(argc, argv);
     }
+}
 
+int main(int argc, char * argv[])
+{
+    pthread_t tid;
+
+    g_argc = argc;
+    g_argv = argv;
+
+    ss_init(argc, argv);
+
+    pthread_create(&tid, NULL, main_cs, NULL);
+
+    ss_run();
+    
     return 0;
 }
 

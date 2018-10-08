@@ -142,13 +142,18 @@ alloc:
             pcur = (struct ss_buff *)malloc(sizeof(struct ss_buff));
             pcur->read  = 0;
             pcur->write = 0;
+            pcur->pnext = NULL;
 
             if ( NULL == pbuff->ptail )
             {
                 pbuff->pnext = pcur;
+                pbuff->ptail = pcur;
             }
-            pcur->pnext  = pbuff->ptail;
-            pbuff->ptail = pcur;
+            else
+            {
+                pbuff->ptail->pnext = pcur;
+                pbuff->ptail = pcur;
+            }
         }
 
         size_t tmp = ss_buff_write(pcur, buf + cnt, remain );
@@ -221,6 +226,8 @@ struct ss_socket_m {
 
     struct ss_accept_s * paccept;
     int socket_ff;
+
+    int close_flag;
 
     struct ss_buff_m buff_r;
     struct ss_buff_m buff_w;
@@ -319,7 +326,6 @@ struct ff_event_data {
 
 struct ss_parm_epoll_ctl {
     int ff_opt;
-    int ff_events;
     int ff_socket_fd;
     struct ff_event_data * ff_event_data;
 };
@@ -327,10 +333,8 @@ struct ss_parm_epoll_ctl {
 pthread_mutex_t g_ss_lock = PTHREAD_MUTEX_INITIALIZER;
 int g_ff_2_ss[SOCK_MAX_NUM] = {0};
 struct ss_socket_m g_ss_socket[SOCK_MAX_NUM];
-struct ss_call_que g_ss_call_que;
+struct ss_call_que g_ss_call_que = {PTHREAD_MUTEX_INITIALIZER,0,NULL,NULL};
 int g_ff_epfd = -1;
-
-
 
 int ss_remote_call( struct ss_call_s * pcall )
 {
@@ -395,6 +399,7 @@ struct ss_socket_m * ss_alloc_socket_fd(void)
     p_ss_socket->socket_type = SS_CLIENT;
     p_ss_socket->event_s = 0;
     p_ss_socket->paccept = NULL;
+    p_ss_socket->close_flag = 0;
 
     ss_buff_m_clean(&p_ss_socket->buff_r);
     ss_buff_m_clean(&p_ss_socket->buff_w);
@@ -772,6 +777,12 @@ ssize_t ss_read(int fd, void *buf, size_t nbytes)
         return -1;
     }
 
+    if (p_ss_socket->close_flag)
+    {
+        pthread_mutex_unlock(&p_ss_socket->lock);
+        return -1;
+    }
+
     cnt = ss_buff_m_read(&p_ss_socket->buff_r, buf, nbytes);
     if ( cnt == 0 )
     {
@@ -796,6 +807,12 @@ ssize_t ss_readv(int fd, const struct iovec *iov, int iovcnt)
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
         printf("socket has been free! %d\n", fd);
+        return -1;
+    }
+
+    if (p_ss_socket->close_flag)
+    {
+        pthread_mutex_unlock(&p_ss_socket->lock);
         return -1;
     }
 
@@ -826,6 +843,12 @@ ssize_t ss_write(int fd, const void *buf, size_t nbytes)
         return -1;
     }
 
+    if (p_ss_socket->close_flag)
+    {
+        pthread_mutex_unlock(&p_ss_socket->lock);
+        return -1;
+    }
+
     cnt = ss_buff_m_write(&p_ss_socket->buff_w, buf, nbytes);
     if ( cnt == 0 )
     {
@@ -850,6 +873,12 @@ ssize_t ss_writev(int fd, const struct iovec *iov, int iovcnt)
     {
         pthread_mutex_unlock(&p_ss_socket->lock);
         printf("socket has been free! %d\n", fd);
+        return -1;
+    }
+
+    if (p_ss_socket->close_flag)
+    {
+        pthread_mutex_unlock(&p_ss_socket->lock);
         return -1;
     }
 
@@ -936,6 +965,11 @@ void ff_epoll_callback_connect(struct ff_event_data * pdata )
         ssize_t remain;
 
         remain = ff_read(pdata->ff_socket_fd, stbuf, sizeof(stbuf));
+        if ( remain < 0 )
+        {
+            p_ss_socket->close_flag = 1;
+        }
+
         if ( remain > 0 )
         {
             ss_buff_m_write(&p_ss_socket->buff_r, stbuf, remain);
@@ -958,11 +992,24 @@ void ff_epoll_callback_connect(struct ff_event_data * pdata )
         for ( ; remain > 0 ; )
         {
             tmp = ff_write(pdata->ff_socket_fd, &stbuf[cnt], remain );
-            remain = remain - tmp;
-            cnt    = cnt    + tmp;
+            if ( tmp > 0 )
+            {
+                remain = remain - tmp;
+                cnt    = cnt    + tmp;
+            }
         }
 
         p_ss_socket->event_s = p_ss_socket->event_s | EPOLLOUT;
+        if ( eventfd_write(p_ss_socket->event_fd, (eventfd_t)(1) ) < 0 )
+        {
+            printf("eventfd_write failed! errno = %d\n", errno );
+        }
+    }
+
+    if (pdata->ff_events & EPOLLERR )
+    {
+        p_ss_socket->close_flag = 1;
+        p_ss_socket->event_s = p_ss_socket->event_s | EPOLLERR;
         if ( eventfd_write(p_ss_socket->event_fd, (eventfd_t)(1) ) < 0 )
         {
             printf("eventfd_write failed! errno = %d\n", errno );
@@ -977,7 +1024,6 @@ struct ss_epoll_data_s {
     int    fd;
     void * pdata;    // epoll_data_t * or struct ss_socket_m *;
 };
-
 
 int ss_epoll_create(int size)
 {
@@ -1037,13 +1083,12 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
                 p_ff_event_data->ff_callback  = ff_epoll_callback_connect;
             }
 
-            p_ff_event_data->ff_events    = 0;
+            p_ff_event_data->ff_events    = pevent->events;
             p_ff_event_data->ff_socket_fd = p_ss_socket->socket_ff;
             p_ff_event_data->ss_socket_s  = p_ss_socket;
         }
 
         ss_parm.ff_socket_fd  = p_ss_socket->socket_ff;
-        ss_parm.ff_events     = pevent->events;
         ss_parm.ff_event_data = p_ff_event_data;
         ss_parm.ff_opt        = op;
 
@@ -1066,10 +1111,16 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
         pdata->fd     = p_ss_socket->event_fd;
         pdata->pdata  = (void *)p_ss_socket;
 
-        event.events  = pevent->events;
-        event.data.ptr = (void *)pdata;
-
-        ret = epoll_ctl(epfd - 10000, op, p_ss_socket->event_fd, &event);
+        if ( op != EPOLL_CTL_DEL )
+        {
+            event.events  = pevent->events;
+            event.data.ptr = (void *)pdata;
+            ret = epoll_ctl(epfd - 10000, op, p_ss_socket->event_fd, &event);
+        }
+        else
+        {
+            ret = epoll_ctl(epfd - 10000, op, p_ss_socket->event_fd, NULL);
+        }
 
         pthread_mutex_unlock(&p_ss_socket->lock);
     }
@@ -1195,11 +1246,17 @@ void ff_proccess_once( struct ss_call_s * pcall )
         case SS_CALL_EPOLL_CTL:
         {
             struct ss_parm_epoll_ctl *parm = (struct ss_parm_epoll_ctl *)pcall->param;
-            struct epoll_event event;
-
-            event.data.ptr = (void *)parm->ff_event_data;
-            event.events   = parm->ff_events;
-            ret = ff_epoll_ctl(g_ff_epfd, parm->ff_opt, parm->ff_socket_fd, &event);
+            if ( NULL != parm->ff_event_data )
+            {
+                struct epoll_event event;
+                event.data.ptr = (void *)parm->ff_event_data;
+                event.events   = parm->ff_event_data->ff_events;
+                ret = ff_epoll_ctl(g_ff_epfd, parm->ff_opt, parm->ff_socket_fd, &event);
+            }
+            else
+            {
+                ret = ff_epoll_ctl(g_ff_epfd, parm->ff_opt, parm->ff_socket_fd, NULL);
+            }
         }break;
         default:
         {
@@ -1222,21 +1279,27 @@ void ff_proccess_once( struct ss_call_s * pcall )
 
 void ff_proccess_call()
 {
+    int ret;
     struct ss_call_s * pcall;
+    struct ss_call_s * pcall_next;
+    
     if ( 0 == g_ss_call_que.calls )
     {
         return;
     }
 
     pthread_mutex_lock(&g_ss_call_que.lock);
+
     pcall = g_ss_call_que.pnext;
     g_ss_call_que.pnext = NULL;
     g_ss_call_que.ptail = NULL;
     g_ss_call_que.calls = 0;
+
     pthread_mutex_unlock(&g_ss_call_que.lock);
 
-    for ( ; pcall != NULL ; pcall = pcall->pnext )
+    for ( ; pcall != NULL ; pcall = pcall_next )
     {
+        pcall_next = pcall->pnext;
         ff_proccess_once(pcall);
     }
 }
