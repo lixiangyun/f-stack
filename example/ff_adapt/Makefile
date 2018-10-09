@@ -10,10 +10,10 @@ endif
 
 LIBS= -Wl,--no-whole-archive -lrt -lm -ldl -lpthread
 
-TARGET="demo"
+TARGET="example"
 all:
-	cc ${HOST_CFLAGS} -o ${TARGET}_socket main_socket.c main_epoll_m.c ${LIBS}
+	cc ${HOST_CFLAGS} -o ${TARGET} main.c ss_socket.c ss_mbuff.c ss_epoll.c ss_util.c ff_api.c ff_epoll.c example.c ${LIBS}
 
 .PHONY: clean
 clean:
-	rm -f *.o ${TARGET} ${TARGET}_epoll
+	rm -f *.o ${TARGET}

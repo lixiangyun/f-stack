@@ -24,6 +24,7 @@ extern "C" {
 #include <pthread.h>
 #include <semaphore.h>
 
+#include "ss_util.h"
 
 #define FF_MAX_EVENTS  512
 #define BUFF_MAX_LEN   4096
@@ -43,8 +44,6 @@ struct ss_buff_m {
     struct ss_buff * pnext;
     struct ss_buff * ptail;
 };
-
-
 
 ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes);
 ssize_t ss_buff_write(struct ss_buff * pbuff, const char *buf, size_t nbytes);
@@ -87,6 +86,9 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
 
 void ss_run(void);
 int ss_init(int argc, char * argv[]);
+
+
+
 
 #ifdef __cplusplus
 }
