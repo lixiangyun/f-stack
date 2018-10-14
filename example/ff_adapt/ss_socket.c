@@ -24,16 +24,13 @@
 #include "ss_inner.h"
 
 
-pthread_mutex_t g_ss_lock = PTHREAD_MUTEX_INITIALIZER;
 struct ss_socket_m g_ss_socket[SOCK_MAX_NUM];
 
-
-struct ss_socket_m * ss_alloc_socket_fd(void)
+struct ss_socket_m * ss_socket_m_alloc(void)
 {
     int i;
     struct ss_socket_m * p_ss_socket;
 
-    pthread_mutex_lock(&g_ss_lock);
     for ( i = SOCK_REL_IDX ; i < SOCK_MAX_NUM ; i++ )
     {
         p_ss_socket = (struct ss_socket_m *)&g_ss_socket[i];
@@ -44,8 +41,6 @@ struct ss_socket_m * ss_alloc_socket_fd(void)
     }
     if ( i == SOCK_MAX_NUM )
     {
-        pthread_mutex_unlock(&g_ss_lock);
-        printf("alloc socket fd failed!\n");
         return NULL;
     }
 
@@ -56,10 +51,51 @@ struct ss_socket_m * ss_alloc_socket_fd(void)
     ss_buff_m_clean(&p_ss_socket->buff_r);
     ss_buff_m_clean(&p_ss_socket->buff_w);
 
-    pthread_mutex_unlock(&g_ss_lock);
-
     return p_ss_socket;
 }
+
+void ss_socket_m_free(struct ss_socket_m * p_ss_socket)
+{
+    if ( p_ss_socket->socket_type == SS_UNUSED )
+    {
+        return;
+    }
+    p_ss_socket->socket_type = SS_UNUSED;
+
+    ss_buff_m_clean(&p_ss_socket->buff_r);
+    ss_buff_m_clean(&p_ss_socket->buff_w);
+}
+
+int ss_socket_remote(struct ss_parm_socket * parm)
+{
+    int i;
+    int fd;
+    struct ss_socket_m * p_ss_socket;
+
+    p_ss_socket = ss_socket_m_alloc();
+    if ( p_ss_socket == NULL )
+    {
+        printf("no free socket!\n");
+        return -1;
+    }
+
+    fd = ff_socket(parm->domain, parm->type, parm->protocol);
+    if ( fd < 0)
+    {
+        printf("call ff socket failed!(ret %d , errno %d)\n",
+                ss_call.ret, ss_call.err );
+
+        ss_socket_m_free();
+
+        p_ss_socket->socket_type = SS_UNUSED;
+        return -1;
+    }
+
+    p_ss_socket->socket_ff = fd;
+
+    return ret;
+}
+
 
 int ss_socket(int domain, int type, int protocol)
 {
@@ -88,7 +124,6 @@ int ss_socket(int domain, int type, int protocol)
     if ( ret < 0)
     {
         printf("call ff socket failed!(ret %d , errno %d)\n", ss_call.ret, ss_call.err );
-        p_ss_socket->socket_type = SS_UNUSED;
         return -1;
     }
     p_ss_socket->socket_ff = ss_call.ret;

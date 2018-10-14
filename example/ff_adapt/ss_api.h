@@ -33,6 +33,23 @@ extern "C" {
 #define SOCK_REL_IDX   0xff00
 
 
+struct ss_buff_idx {
+    int read;
+    int write;
+}
+
+union ss_buff_u {
+    struct ss_buff_idx idx;
+    long value;
+}
+
+
+struct ss_buff_m {
+    union ss_buff_u pos;
+    char   body[BUFF_MAX_LEN];
+}
+
+
 struct ss_buff {
     char   body[BUFF_MAX_LEN];
     int    write;

@@ -40,16 +40,12 @@ struct ss_accept_s {
 };
 
 struct ss_socket_m {
-    pthread_mutex_t lock;
 
-    int socket_type;
-    int socket_idx;
-
-    int event_fd;
-    int event_s;
+    int status;
+    int idx;
 
     struct ss_accept_s * paccept;
-    int socket_ff;
+    int socketfd;
 
     struct ss_buff_m buff_r;
     struct ss_buff_m buff_w;
