@@ -7,147 +7,100 @@
 #include "ss_api.h"
 
 
+
+
+
+struct ss_buff * ss_buff_alloc(void)
+{
+    struct ss_buff * pbuff;
+
+    pbuff = (struct ss_buff *)malloc(sizeof(struct ss_buff));
+    if ( NULL == pbuff )
+    {
+        return NULL;
+    }
+
+    memset( pbuff, 0, sizeof(struct ss_buff) );
+
+    pbuff->read = 0;
+    pbuff->write = 0;
+
+    return pbuff;
+}
+
+void ss_buff_free(struct ss_buff * pbuff)
+{
+    memset( pbuff, 0, sizeof(struct ss_buff) );
+    free(pbuff);
+}
+
+ssize_t ss_buff_size(struct ss_buff * pbuff)
+{
+    if ( pbuff->write >= pbuff->read )
+    {
+        return (ssize_t)(pbuff->write - pbuff->read);
+    }
+    else
+    {
+        return (ssize_t)(SS_BUFF_MAX_LEN - 1 + pbuff->write - pbuff->read);
+    }
+}
+
+ssize_t ss_buff_write(struct ss_buff * pbuff, char *buf, size_t nbytes)
+{
+    ssize_t remain, cnt;
+
+    remain = (SS_BUFF_MAX_LEN - 1) - ss_buff_size(pbuff);
+    cnt = ( remain < nbytes ) ? remain : nbytes ;
+    if ( cnt == 0 )
+    {
+        return 0;
+    }
+
+    if ( ( pbuff->write + cnt ) > SS_BUFF_MAX_LEN )
+    {
+        remain = (SS_BUFF_MAX_LEN - pbuff->write);
+        memcpy(&pbuff->body[pbuff->write], buf, remain);
+        memcpy(&pbuff->body[0], buf + remain, cnt - remain);
+    }
+    else
+    {
+        memcpy(&pbuff->body[pbuff->write], buf, cnt);
+    }
+
+    pbuff->write = ( pbuff->write + cnt ) % SS_BUFF_MAX_LEN;
+
+    return cnt;
+}
+
 ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes)
 {
-    int copy_size;
-    int copy_idx;
+    ssize_t size, cnt, remain;
 
-    if ( ( pbuff->read + nbytes) > pbuff->write )
-    {
-        copy_size = pbuff->write - pbuff->read;
-    }
-    else
-    {
-        copy_size = nbytes;
-    }
-
-    if ( 0 == copy_size )
+    size = ss_buff_size(pbuff);
+    cnt  = ( size < nbytes ) ? size : nbytes ;
+    if ( cnt == 0 )
     {
         return 0;
     }
 
-    memcpy(buf, &pbuff->body[pbuff->read], copy_size );
-    pbuff->read += copy_size;
-
-    return copy_size;
-}
-
-ssize_t ss_buff_write(struct ss_buff * pbuff, const char *buf, size_t nbytes)
-{
-    int copy_size;
-
-    if ( ( pbuff->write + nbytes ) > BUFF_MAX_LEN )
+    if ( ( pbuff->read + cnt ) > SS_BUFF_MAX_LEN )
     {
-        copy_size = BUFF_MAX_LEN - pbuff->write;
+        remain = (SS_BUFF_MAX_LEN - pbuff->read);
+        memcpy(buf, &pbuff->body[pbuff->read], remain);
+        memcpy(buf + remain, &pbuff->body[0], cnt - remain);
     }
     else
     {
-        copy_size = nbytes;
+        memcpy(buf, &pbuff->body[pbuff->read], cnt);
     }
 
-    if ( 0 == copy_size )
-    {
-        return 0;
-    }
-
-    memcpy( &pbuff->body[pbuff->write], buf, copy_size );
-    pbuff->write += copy_size;
-
-    return copy_size;
-}
-
-ssize_t ss_buff_m_read(struct ss_buff_m * pbuff, char *buf, size_t nbytes)
-{
-    size_t cnt = 0;
-    size_t remain = nbytes;
-    struct ss_buff * pcur = pbuff->pnext;
-
-    while( pcur != NULL )
-    {
-        size_t tmp = ss_buff_read(pcur, buf + cnt, remain);
-
-        if ( 0 == tmp )
-        {
-            pbuff->pnext = pcur->pnext;
-            free(pcur);
-            pcur = pbuff->pnext;
-
-            continue;
-        }
-
-        cnt    += tmp;
-        remain -= tmp;
-
-        if ( 0 == remain )
-        {
-            break;
-        }
-    }
-
-    if ( NULL == pbuff->pnext )
-    {
-        pbuff->ptail = NULL;
-    }
+    pbuff->read = ( pbuff->read + cnt ) % SS_BUFF_MAX_LEN;
 
     return cnt;
 }
 
-ssize_t ss_buff_m_readv(struct ss_buff_m * pbuff, const struct iovec *iov, int iovcnt)
-{
-    int i;
-    ssize_t tmp;
-    ssize_t cnt = 0;
-
-    for( i = 0 ; i < iovcnt; i++ )
-    {
-        tmp = ss_buff_m_read(pbuff, iov[i].iov_base, iov[i].iov_len );
-        cnt += tmp;
-        if ( tmp < iov[i].iov_len )
-        {
-            break;
-        }
-    }
-
-    return cnt;
-}
-
-ssize_t ss_buff_m_write(struct ss_buff_m * pbuff, const char *buf, size_t nbytes)
-{
-    size_t cnt = 0;
-    size_t remain = nbytes;
-    struct ss_buff * pcur = pbuff->ptail;
-
-    for ( ; remain != 0 ; )
-    {
-        if ( NULL == pcur )
-        {
-alloc:
-            pcur = (struct ss_buff *)malloc(sizeof(struct ss_buff));
-            pcur->read  = 0;
-            pcur->write = 0;
-
-            if ( NULL == pbuff->ptail )
-            {
-                pbuff->pnext = pcur;
-            }
-            pcur->pnext  = pbuff->ptail;
-            pbuff->ptail = pcur;
-        }
-
-        size_t tmp = ss_buff_write(pcur, buf + cnt, remain );
-        if ( 0 == tmp )
-        {
-            goto alloc;
-        }
-
-        cnt    += tmp;
-        remain -= tmp;
-    }
-
-    return cnt;
-}
-
-ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int iovcnt)
+ssize_t ss_buff_writev(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt)
 {
     int i;
     ssize_t tmp;
@@ -166,20 +119,23 @@ ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int 
     return cnt;
 }
 
-void ss_buff_m_clean(struct ss_buff_m * pbuffm)
+ssize_t ss_buff_readv(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt)
 {
-    struct ss_buff * pbuff;
-    struct ss_buff * pnext;
+    int i;
+    ssize_t tmp;
+    ssize_t cnt = 0;
 
-    for ( pbuff = pbuffm->pnext; pbuff != NULL ; pbuff = pnext )
+    for( i = 0 ; i < iovcnt; i++ )
     {
-        pnext = pbuff->pnext;
-        memset( pbuff, 0, sizeof(struct ss_buff) );
-        free((void *)pbuff);
+        tmp = ss_buff_m_read(pbuff, iov[i].iov_base, iov[i].iov_len );
+        cnt += tmp;
+        if ( tmp < iov[i].iov_len )
+        {
+            break;
+        }
     }
 
-    pbuffm->pnext = NULL;
-    pbuffm->ptail = NULL;
+    return cnt;
 }
 
 

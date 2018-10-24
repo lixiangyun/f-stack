@@ -26,52 +26,38 @@ extern "C" {
 
 #include "ss_util.h"
 
+#define SS_BUFF_MAX_LEN   (2*1024*1024)
+
+struct ss_buff {
+    int    read;
+    int    write;
+    char   body[SS_BUFF_MAX_LEN];
+};
+
+
+
+
+
 #define FF_MAX_EVENTS  512
-#define BUFF_MAX_LEN   4096
 
 #define SOCK_MAX_NUM   0xffff
 #define SOCK_REL_IDX   0xff00
 
 
-struct ss_buff_idx {
-    int read;
-    int write;
-}
+struct ss_buff * ss_buff_alloc(void);
 
-union ss_buff_u {
-    struct ss_buff_idx idx;
-    long value;
-}
+void ss_buff_free(struct ss_buff * pbuff);
+
+ssize_t ss_buff_size(struct ss_buff * pbuff);
 
 
-struct ss_buff_m {
-    union ss_buff_u pos;
-    char   body[BUFF_MAX_LEN];
-}
-
-
-struct ss_buff {
-    char   body[BUFF_MAX_LEN];
-    int    write;
-    int    read;
-    struct ss_buff * pnext;
-};
-
-struct ss_buff_m {
-    struct ss_buff * pnext;
-    struct ss_buff * ptail;
-};
-
+/* buffer ¶ÁÐ´½Ó¿Ú */
 ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes);
+ssize_t ss_buff_readv(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt);
+
 ssize_t ss_buff_write(struct ss_buff * pbuff, const char *buf, size_t nbytes);
+ssize_t ss_buff_writev(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt);
 
-ssize_t ss_buff_m_read(struct ss_buff_m * pbuff, char *buf, size_t nbytes);
-ssize_t ss_buff_m_readv(struct ss_buff_m * pbuff, const struct iovec *iov, int iovcnt);
-
-ssize_t ss_buff_m_write(struct ss_buff_m * pbuff, const char *buf, size_t nbytes);
-ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int iovcnt);
-
-void ss_buff_m_clean(struct ss_buff_m * pbuffm);
 
 
 int ss_socket(int domain, int type, int protocol);
