@@ -1,3 +1,5 @@
+#define _GNU_SOURCE  
+
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <stdlib.h>
@@ -9,7 +11,10 @@
 #include <errno.h>
 #include <assert.h>
 #include <unistd.h>
+
+           /* See feature_test_macros(7) */
 #include <pthread.h>
+#include <sched.h> 
 
 #include "ss_api.h"
 
@@ -300,8 +305,6 @@ int server_init(int argc, char * argv[])
         exit(1);
     }
     
-    pthread_create(&tid, NULL, stat_display, NULL);
-
     server_socket_process(NULL);
 
     return 0;
@@ -364,8 +367,6 @@ int client_init(int argc, char * argv[])
         exit(1);
     }
 
-    pthread_create(&tid, NULL, stat_display, NULL);
-
     client_socket_process(NULL);
 
     return 0;
@@ -381,8 +382,17 @@ void * main_cs(void * arg)
     pthread_t tid;
     int argc = g_argc;
     char ** argv = g_argv;
+    cpu_set_t mask;
 
     sleep(2);
+
+    CPU_ZERO(&mask);  
+    for (i = 0; i < 16; i++) 
+    {
+        CPU_SET(i, &mask);  
+    }
+
+    pthread_setaffinity_np( pthread_self(), sizeof(mask), &mask );
 
     pthread_create(&tid, NULL, stat_display, NULL);
 
