@@ -26,11 +26,13 @@ extern "C" {
 
 #include "ss_api.h"
 
-enum ss_socket_type {
-    SS_UNUSED,
-    SS_SERVER,
-    SS_CLIENT,
-};
+#define SS_USED_FLAG  0x1
+#define SS_SOCK_TYPE  0x2
+#define SS_CONN_STAT  0x4
+
+#define SS_SERVER   0x2
+#define SS_CLIENT   0x0
+
 
 struct ss_accept_s {
     int fd;

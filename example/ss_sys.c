@@ -46,7 +46,7 @@ struct ss_call_func ss_call_funcs[] = {
     { SS_CALL_EPOLL_CTL, ss_epoll_ctl_call },
 };
 
-struct ss_socket_m g_ss_socket[SOCK_MAX_NUM] = {SS_UNUSED,0,0,0,NULL,NULL,NULL};
+struct ss_socket_m g_ss_socket[SOCK_MAX_NUM] = {0,0,0,0,NULL,NULL,NULL};
 
 struct ss_socket_m * ss_socket_m_alloc(void)
 {
@@ -56,7 +56,7 @@ struct ss_socket_m * ss_socket_m_alloc(void)
     for ( i = SOCK_REL_IDX ; i < SOCK_MAX_NUM ; i++ )
     {
         p_socket = (struct ss_socket_m *)&g_ss_socket[i];
-        if ( p_socket->status == SS_UNUSED )
+        if ( 0 == (p_socket->status & SS_USED_FLAG) )
         {
             break;
         }
@@ -66,7 +66,7 @@ struct ss_socket_m * ss_socket_m_alloc(void)
         return NULL;
     }
 
-    p_socket->status  = SS_CLIENT;
+    p_socket->status  = SS_USED_FLAG;
     p_socket->sockfd  = 0;
     p_socket->idx     = i;
     p_socket->ref++;
@@ -80,7 +80,7 @@ struct ss_socket_m * ss_socket_m_alloc(void)
 
 void ss_socket_m_free(struct ss_socket_m * p_socket)
 {
-    p_socket->status  = SS_UNUSED;
+    p_socket->status  = 0;
     p_socket->paccept = NULL;
     p_socket->ref++;
 
@@ -113,14 +113,19 @@ int ss_socket_m_event(int ss_fd)
         return EPOLLERR;
     }
 
-    if ( p_socket->status == SS_SERVER )
+    if ( p_socket->status & SS_CONN_STAT )
+    {
+        return EPOLLERR;
+    }
+
+    if (( p_socket->status & SS_SOCK_TYPE) == SS_SERVER )
     {
         if ( p_socket->paccept != NULL )
         {
             event |= EPOLLIN;
         }
     }
-    else if ( p_socket->status == SS_CLIENT )
+    else if (( p_socket->status & SS_SOCK_TYPE) == SS_CLIENT )
     {
         if ( ss_buff_size(p_socket->pread) > 0 )
         {
@@ -241,7 +246,7 @@ void ss_bind_call( struct ss_call_s * pcall )
     ret = ff_bind(p_socket->sockfd, (const struct linux_sockaddr *)parm->addr, parm->addrlen);
     if ( 0 == ret )
     {
-        p_socket->status  = SS_SERVER;
+        p_socket->status |= SS_SERVER;
     }
     
     pcall->ret = ret;
@@ -264,7 +269,7 @@ void ss_connect_call( struct ss_call_s * pcall )
     ret = ff_connect(p_socket->sockfd, (const struct linux_sockaddr *)parm->name, parm->namelen);
     if ( 0 == ret )
     {
-        p_socket->status  = SS_CLIENT;
+        p_socket->status |= SS_CLIENT;
     }
 
     pcall->ret = ret;
@@ -468,8 +473,8 @@ void ss_buff_accept( struct ss_socket_m * p_socket )
         printf("ss buff accept get client fd %d !\n", client_fd);
         
         p_cli = ss_socket_m_alloc();
-        p_cli->status = SS_CLIENT;
-        p_cli->sockfd = client_fd;
+        p_cli->status |= SS_CLIENT;
+        p_cli->sockfd  = client_fd;
 
         p_accept->fd    = ( p_cli->idx + (p_cli->ref << 16) );
         
@@ -490,6 +495,13 @@ void ss_buff_connect(struct ss_socket_m * p_socket, int events )
         cnt = (remain < sizeof(stbuf)) ? remain : sizeof(stbuf);
 
         cnt = ff_read(p_socket->sockfd, stbuf, cnt );
+        if ( 0 == cnt || ( cnt < 0 && errno != EAGAIN ) )
+        {
+            printf("ff connect read disable!\n");
+            p_socket->status |= SS_CONN_STAT;
+            return;
+        }
+        
         if ( cnt > 0 )
         {
             ss_buff_write(p_socket->pread, stbuf, cnt );
@@ -507,9 +519,24 @@ void ss_buff_connect(struct ss_socket_m * p_socket, int events )
         for ( cnt = 0 ; remain > 0 ; )
         {
             tmp = ff_write(p_socket->sockfd, &stbuf[cnt], remain );
-            remain = remain - tmp;
-            cnt    = cnt    + tmp;
+            if ( 0 == tmp || ( tmp < 0 && errno != EAGAIN ) )
+            {
+                printf("ff connect write disable!\n");
+                p_socket->status |= SS_CONN_STAT;
+                return;
+            }
+            else if ( tmp > 0 )
+            {
+                remain = remain - tmp;
+                cnt    = cnt    + tmp;
+            }
         }
+    }
+
+    if ( events & EPOLLERR )
+    {
+        printf("ff connect event disable!\n");
+        p_socket->status |= SS_CONN_STAT;
     }
 }
 
@@ -532,13 +559,11 @@ void ss_ffep_loop()
             continue;
         }
 
-        //printf("ff epoll wait : fd %d, event %d\n", fd, event);
-
-        if ( p_socket->status == SS_CLIENT )
+        if (( p_socket->status & SS_SOCK_TYPE) == SS_CLIENT )
         {
             ss_buff_connect(p_socket, event );
         }
-        else if ( p_socket->status == SS_SERVER )
+        else if (( p_socket->status & SS_SOCK_TYPE) == SS_SERVER )
         {
             ss_buff_accept(p_socket);
         }

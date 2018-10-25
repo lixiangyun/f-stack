@@ -273,6 +273,12 @@ ssize_t ss_read(int fd, void *buf, size_t nbytes)
         return 0;
     }
 
+    if ( p_socket->status & SS_CONN_STAT )
+    {
+        printf("socket disconnect! %d\n", fd);
+        return 0;
+    }
+
     cnt = ss_buff_read(p_socket->pread, buf, nbytes);
     if ( cnt == 0 )
     {
@@ -290,6 +296,12 @@ ssize_t ss_readv(int fd, const struct iovec *iov, int iovcnt)
     if ( NULL == p_socket )
     {
         printf("socket free! %d\n", fd);
+        return 0;
+    }
+
+    if ( p_socket->status & SS_CONN_STAT )
+    {
+        printf("socket disconnect! %d\n", fd);
         return 0;
     }
 
@@ -313,6 +325,12 @@ ssize_t ss_write(int fd, const void *buf, size_t nbytes)
         return 0;
     }
 
+    if ( p_socket->status & SS_CONN_STAT )
+    {
+        printf("socket disconnect! %d\n", fd);
+        return 0;
+    }
+
     cnt = ss_buff_write(p_socket->pwrite, (char *)buf, nbytes);
     if ( cnt == 0 )
     {
@@ -330,6 +348,12 @@ ssize_t ss_writev(int fd, const struct iovec *iov, int iovcnt)
     if ( NULL == p_socket )
     {
         printf("socket free! %d\n", fd);
+        return 0;
+    }
+
+    if ( p_socket->status & SS_CONN_STAT )
+    {
+        printf("socket disconnect! %d\n", fd);
         return 0;
     }
 
@@ -431,7 +455,15 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
         
         ss_parm.fd     = fd;
         ss_parm.opt    = op;
-        ss_parm.events = pevent->events;
+        
+        if ( op == EPOLL_CTL_DEL )
+        {
+            ss_parm.events = 0;
+        }
+        else
+        {
+            ss_parm.events = pevent->events;
+        }
 
         ss_call.call_idx = SS_CALL_EPOLL_CTL;
         ss_call.param    = (void *)&ss_parm;
@@ -444,12 +476,35 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
             return -1;
         }
 
-        for ( i = 0 ; i < EPOLL_MAX_NUM ; i++ )
+        if ( op == EPOLL_CTL_DEL )
         {
-            if ( p_epoll->sock_fd[i] == 0 )
+            for ( i = 0 ; i < EPOLL_MAX_NUM ; i++ )
             {
-                p_epoll->sock_fd[i] = fd;
-                break;
+                if ( p_epoll->sock_fd[i] == fd )
+                {
+                    p_epoll->sock_fd[i] = 0;
+                    break;
+                }
+            }
+        }
+        else if ( op == EPOLL_CTL_ADD )
+        {
+            // ·ÀÖØ¸´×¢²á
+            for ( i = 0 ; i < EPOLL_MAX_NUM ; i++ )
+            {
+                if ( p_epoll->sock_fd[i] == fd )
+                {
+                    return 0;
+                }
+            }
+
+            for ( i = 0 ; i < EPOLL_MAX_NUM ; i++ )
+            {
+                if ( p_epoll->sock_fd[i] == 0 )
+                {
+                    p_epoll->sock_fd[i] = fd;
+                    break;
+                }
             }
         }
 
