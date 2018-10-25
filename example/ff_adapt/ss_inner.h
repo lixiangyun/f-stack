@@ -26,8 +26,6 @@ extern "C" {
 
 #include "ss_api.h"
 
-
-
 enum ss_socket_type {
     SS_UNUSED,
     SS_SERVER,
@@ -35,20 +33,21 @@ enum ss_socket_type {
 };
 
 struct ss_accept_s {
-    int socket_ff;
+    int fd;
+    struct sockaddr  addr;
+    socklen_t        addrlen;    
     struct ss_accept_s * pnext;
 };
 
 struct ss_socket_m {
-
     int status;
     int idx;
+    int ref;
+    int sockfd;
 
     struct ss_accept_s * paccept;
-    int socketfd;
-
-    struct ss_buff_m buff_r;
-    struct ss_buff_m buff_w;
+    struct ss_buff * pread;
+    struct ss_buff * pwrite;
 };
 
 struct ss_call_s {
@@ -77,7 +76,8 @@ enum ss_call_idx {
     SS_CALL_CLOSE,
     SS_CALL_GETPEERNAME,
     SS_CALL_GETSOCKNAME,
-    SS_CALL_EPOLL_CTL
+    SS_CALL_EPOLL_CTL,
+    SS_CALL_END,
 };
 
 struct ss_parm_socket {
@@ -135,33 +135,41 @@ struct ss_parm_getsockname {
     socklen_t *namelen;
 };
 
-struct ff_event_data {
-    int ff_socket_fd;
-    int ff_events;
-    struct ss_socket_m * ss_socket_s;
-    void (* ff_callback)(struct ff_event_data *);
-};
-
 struct ss_parm_epoll_ctl {
-    int ff_opt;
-    int ff_events;
-    int ff_socket_fd;
-    struct ff_event_data * ff_event_data;
+    int fd;
+    int opt;
+    int events;
 };
-
-
 
 extern pthread_mutex_t g_ss_lock;
-extern struct ss_socket_m g_ss_socket[SOCK_MAX_NUM];
 
+extern struct ss_socket_m g_ss_socket[];
 
-extern struct ss_call_que g_ss_call_que;
 extern int g_ff_epfd;
 
 
 
+struct ss_socket_m * ss_socket_m_alloc(void);
 
-int ss_remote_call( struct ss_call_s * pcall );
+void ss_socket_m_free(struct ss_socket_m * p_socket);
+
+struct ss_socket_m * ss_socket_m_get(int ss_fd);
+
+int ss_socket_m_event(int ss_fd);
+
+void ss_socket_call( struct ss_call_s * pcall );
+void ss_setsockopt_call( struct ss_call_s * pcall );
+void ss_getsockopt_call( struct ss_call_s * pcall );
+void ss_listen_call( struct ss_call_s * pcall );
+void ss_bind_call( struct ss_call_s * pcall );
+void ss_connect_call( struct ss_call_s * pcall );
+void ss_close_call( struct ss_call_s * pcall );
+void ss_getpeername_call( struct ss_call_s * pcall );
+void ss_getsockname_call( struct ss_call_s * pcall );
+void ss_epoll_ctl_call( struct ss_call_s * pcall );
+
+
+int ss_call_remote( struct ss_call_s * pcall );
 
 
 #ifdef __cplusplus

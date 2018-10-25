@@ -31,10 +31,12 @@ int main(int argc, char * argv[])
 
     if ( flag )
     {
+        // s p 1100
         server_init(argc, argv);
     }
     else
     {
+        // c a 127.0.0.1 p 1100
         client_init(argc, argv);
     }
 

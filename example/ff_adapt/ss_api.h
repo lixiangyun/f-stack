@@ -35,14 +35,15 @@ struct ss_buff {
 };
 
 
-
-
-
-#define FF_MAX_EVENTS  512
+#define SS_MAX_EVENTS  32
 
 #define SOCK_MAX_NUM   0xffff
+
+#define SOCK_FD_MASK   0xffff
+
 #define SOCK_REL_IDX   0xff00
 
+#define EPOLL_MAX_NUM  0xff
 
 struct ss_buff * ss_buff_alloc(void);
 
@@ -53,10 +54,10 @@ ssize_t ss_buff_size(struct ss_buff * pbuff);
 
 /* buffer ¶ÁÐ´½Ó¿Ú */
 ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes);
-ssize_t ss_buff_readv(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt);
+ssize_t ss_buff_readv(struct ss_buff * pbuff, struct iovec *iov, int iovcnt);
 
-ssize_t ss_buff_write(struct ss_buff * pbuff, const char *buf, size_t nbytes);
-ssize_t ss_buff_writev(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt);
+ssize_t ss_buff_write(struct ss_buff * pbuff, char *buf, size_t nbytes);
+ssize_t ss_buff_writev(struct ss_buff * pbuff, struct iovec *iov, int iovcnt);
 
 
 

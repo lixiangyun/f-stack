@@ -6,10 +6,6 @@
 
 #include "ss_api.h"
 
-
-
-
-
 struct ss_buff * ss_buff_alloc(void)
 {
     struct ss_buff * pbuff;
@@ -100,7 +96,7 @@ ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes)
     return cnt;
 }
 
-ssize_t ss_buff_writev(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt)
+ssize_t ss_buff_writev(struct ss_buff * pbuff, struct iovec *iov, int iovcnt)
 {
     int i;
     ssize_t tmp;
@@ -108,7 +104,7 @@ ssize_t ss_buff_writev(struct ss_buff * pbuff, const struct iovec *iov, int iovc
 
     for( i = 0 ; i < iovcnt; i++ )
     {
-        tmp = ss_buff_m_write(pbuff, iov[i].iov_base, iov[i].iov_len );
+        tmp = ss_buff_write(pbuff, iov[i].iov_base, iov[i].iov_len );
         cnt += tmp;
         if ( tmp < iov[i].iov_len )
         {
@@ -119,7 +115,7 @@ ssize_t ss_buff_writev(struct ss_buff * pbuff, const struct iovec *iov, int iovc
     return cnt;
 }
 
-ssize_t ss_buff_readv(struct ss_buff * pbuff, const struct iovec *iov, int iovcnt)
+ssize_t ss_buff_readv(struct ss_buff * pbuff, struct iovec *iov, int iovcnt)
 {
     int i;
     ssize_t tmp;
@@ -127,7 +123,7 @@ ssize_t ss_buff_readv(struct ss_buff * pbuff, const struct iovec *iov, int iovcn
 
     for( i = 0 ; i < iovcnt; i++ )
     {
-        tmp = ss_buff_m_read(pbuff, iov[i].iov_base, iov[i].iov_len );
+        tmp = ss_buff_read(pbuff, iov[i].iov_base, iov[i].iov_len );
         cnt += tmp;
         if ( tmp < iov[i].iov_len )
         {
