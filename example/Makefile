@@ -23,8 +23,8 @@ LIBS+= -Wl,--no-whole-archive -lrt -lm -ldl -lcrypto -pthread -lnuma
 TARGET="helloworld"
 all:
 	cc ${HOST_CFLAGS} -I../lib -o ${TARGET} main.c ${LIBS}
-	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll main_epoll.c ${LIBS}
-	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_cs main_epoll_cs.c main_epoll_m.c ${LIBS}
+	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll main_epoll.c ss_mbuff.c ${LIBS}
+	cc ${HOST_CFLAGS} -I../lib -o ${TARGET}_epoll_cs main_epoll_cs.c ss_api.c ss_mbuff.c ss_sys.c ss_util.c ${LIBS}
 
 .PHONY: clean
 clean:

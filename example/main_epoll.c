@@ -9,214 +9,175 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "ff_config.h"
 #include "ff_api.h"
 #include "ff_epoll.h"
+#include "ss_api.h"
 
+#define MAX_EVENTS     512
 
+#define BUFF_MAX_LEN   4096
 
-#define MAX_EVENTS 512
+int g_sockfd = -1;
+int g_epollfd = -1;
 
+struct ss_buff * g_buff_m;
 
-char html[] = 
-"HTTP/1.1 200 OK\r\n"
-"Server: F-Stack\r\n"
-"Date: Sat, 25 Feb 2017 09:26:33 GMT\r\n"
-"Content-Type: text/html\r\n"
-"Content-Length: 439\r\n"
-"Last-Modified: Tue, 21 Feb 2017 09:44:03 GMT\r\n"
-"Connection: keep-alive\r\n"
-"Accept-Ranges: bytes\r\n"
-"\r\n"
-"<!DOCTYPE html>\r\n"
-"<html>\r\n"
-"<head>\r\n"
-"<title>Welcome to F-Stack!</title>\r\n"
-"<style>\r\n"
-"    body {  \r\n"
-"        width: 35em;\r\n"
-"        margin: 0 auto; \r\n"
-"        font-family: Tahoma, Verdana, Arial, sans-serif;\r\n"
-"    }\r\n"
-"</style>\r\n"
-"</head>\r\n"
-"<body>\r\n"
-"<h1>Welcome to F-Stack!</h1>\r\n"
-"\r\n"
-"<p>For online documentation and support please refer to\r\n"
-"<a href=\"http://F-Stack.org/\">F-Stack.org</a>.<br/>\r\n"
-"\r\n"
-"<p><em>Thank you for using F-Stack.</em></p>\r\n"
-"</body>\r\n"
-"</html>";
+int g_stat_send_times    = 0;
+size_t g_stat_send_size  = 0;
+int g_stat_recv_times    = 0;
+size_t g_stat_recv_size  = 0;
 
-int sockfdlist[10] = {-1};
-int sockfdcnt = 0;
-
-int epfd;
-int flag = 0;
-
-
-int newsocket( int port )
+void * stat_display(void * arg) 
 {
-    int ret;
-    int sockfd = -1;
+    int send_times = 0;
+    int recv_times = 0;
+    size_t send_size = 0;
+    size_t recv_size = 0;
+
+    send_times = g_stat_send_times;
+    recv_times = g_stat_recv_times;
+    send_size  = g_stat_send_size;
+    recv_size  = g_stat_recv_size;
     
-    sockfd = ff_socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
+    for (;;)
     {
-        printf("ff_socket failed\n");
-        return -1;
-    }
+        sleep(5);
 
-    int on = 1;
-    ret = ff_ioctl(sockfd, FIONBIO, &on);
-    if (ret < 0) 
-    {
-        printf("ff_bind failed\n");
-        ff_close(sockfd);
-        return -1;
-    }
-
-    struct sockaddr_in my_addr;
-    bzero(&my_addr, sizeof(my_addr));
-    my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(port);
-    my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    ret = ff_bind(sockfd, (struct linux_sockaddr *)&my_addr, sizeof(my_addr));
-    if (ret < 0) 
-    {
-        printf("ff_bind failed\n");
-        ff_close(sockfd);
-        return -1;
-    }
-
-    ret = ff_listen(sockfd, MAX_EVENTS);
-    if (ret < 0) 
-    {
-        printf("ff_listen failed\n");
-        ff_close(sockfd);
-        return -1;
-    }
-
-    printf("sockfd:%d, port:%d\n", sockfd, port);
-
-    sockfdlist[sockfdcnt] = sockfd;
-    sockfdcnt++;
-
-    return sockfd;
-}
-
-int checksockfd(int sockfd)
-{
-    for(int i = 0 ; i < sockfdcnt ; i++ )
-    {
-        if ( sockfd == sockfdlist[i] )
+        if (( g_stat_send_times - send_times) != 0 )
         {
-            return sockfd;
+            printf(" stat send times %d \n", (g_stat_send_times - send_times)/5 );
+            printf(" stat send size  %lu \n", (g_stat_send_size  - send_size )/5 );
         }
+
+        if (( g_stat_recv_times - recv_times ) != 0 )
+        {
+            printf(" stat recv times %d \n", (g_stat_recv_times - recv_times)/5 );
+            printf(" stat recv size  %lu \n", (g_stat_recv_size  - recv_size )/5 );
+        }
+
+        send_times = g_stat_send_times;
+        recv_times = g_stat_recv_times;
+        send_size  = g_stat_send_size;
+        recv_size  = g_stat_recv_size;
     }
-    return -1;
 }
 
-void epolladd(int sockfd)
+int server_socket_process(void * arg)
 {
     int ret;
-    struct epoll_event ev;
-    
-    ev.data.fd = sockfd;
-    ev.events  = EPOLLIN | EPOLLERR;
-    ret = ff_epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &ev);
-    if ( ret < 0 )
-    {
-        printf("ff_epoll_ctl failed:%d, %s\n", errno, strerror(errno));
-    }
-}
-
-int loop(void *arg)
-{
-    int i;
-    int sockfd;
-    int nevents;
     struct epoll_event ev;
     struct epoll_event events[MAX_EVENTS];
+    int epfd = g_epollfd;
 
-    /*
-    if ( 10000 == flag )
-    {
-        sockfd = newsocket(81);
-        if ( sockfd > 0 )
-        {
-            epolladd(sockfd);
-        }
-    }*/
+    /* Wait for events to happen */
+    int nevents = ff_epoll_wait(epfd,  events, MAX_EVENTS, -1);
+    int i;
 
-    flag++;
-    
-    nevents = ff_epoll_wait(epfd, events, MAX_EVENTS, 0);
     for ( i = 0; i < nevents ; ++i ) 
     {
-        sockfd = checksockfd(events[i].data.fd);
-        if ( sockfd != -1 ) 
+        /* Handle new connect */
+        if (events[i].data.fd == g_sockfd) 
         {
             while (1) 
             {
-                int nclientfd;
-                nclientfd = ff_accept(sockfd, NULL, NULL);
+                int nclientfd = ff_accept(g_sockfd, NULL, NULL);
                 if (nclientfd < 0) 
                 {
                     break;
                 }
-
+    
                 printf("accept client fd %d.\n", nclientfd);
-                epolladd(nclientfd);
+    
+                /* Add to event list */
+                ev.data.fd = nclientfd;
+                ev.events  = EPOLLIN | EPOLLOUT | EPOLLERR;
+                if (ff_epoll_ctl(epfd, EPOLL_CTL_ADD, nclientfd, &ev) != 0) 
+                {
+                    printf("epoll_ctl failed:%d, %s\n", errno, strerror(errno));
+                    break;
+                }
             }
         } 
         else
-        {
+        { 
+            char buf[BUFF_MAX_LEN];
+            size_t writelen = 0;
+            size_t readlen  = 0;
+
             if (events[i].events & EPOLLERR ) 
             {
                 /* Simply close socket */
                 ff_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                 ff_close(events[i].data.fd);
-
-                printf("connect error %d close.\n", events[i].data.fd);
+    
+                printf("connect %d close.\n", events[i].data.fd);
             } 
-            else if (events[i].events & EPOLLIN )
+
+            if (events[i].events & EPOLLIN )
             {
-                char buf[4096];
-                size_t writelen;
-                size_t readlen = ff_read( events[i].data.fd, buf, sizeof(buf));
-                if( readlen > 0 )
+                readlen = ff_read( events[i].data.fd, buf, sizeof(buf));
+                if ( readlen > 0 )
                 {
-                    writelen = ff_write( events[i].data.fd, html, sizeof(html) );
-                } 
-                else 
+                    g_stat_recv_times++;
+                    g_stat_recv_size += readlen;
+                    ss_buff_write(g_buff_m, buf, readlen);
+                }
+                if ( readlen == 0 ) 
                 {
                     ff_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                     ff_close( events[i].data.fd);
-
-                    printf("connect read %d close.\n", events[i].data.fd);
+                    
+                    printf("connect %d close.\n", events[i].data.fd);
                 }
             }
-            else
+
+            if (events[i].events & EPOLLOUT )
             {
-                printf("unknown event: %8.8X\n", events[i].events);
+                readlen = ss_buff_read(g_buff_m, buf, sizeof(buf));
+                if ( readlen > 0 )
+                {
+                    writelen = ff_write( events[i].data.fd, buf, readlen);
+                    g_stat_send_times++;
+                    g_stat_send_size += writelen;
+
+                    if ( writelen == 0 ) 
+                    {
+                        ff_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
+                        ff_close( events[i].data.fd);
+                        
+                        printf("connect %d close.\n", events[i].data.fd);
+                    }
+                }
             }
         }
     }
+
+    return 0;
 }
 
-int main(int argc, char * argv[])
+
+int server_init(int argc, char * argv[])
 {
+    int ret;
     int i;
     short port;
-    int  sockfd;
-    
-    ff_init(argc, argv);
+    struct epoll_event ev;
 
+    pthread_t tid;
+
+    g_buff_m = (struct ss_buff *)malloc(sizeof(struct ss_buff));
+    
+    g_sockfd = ff_socket(AF_INET, SOCK_STREAM, 0);
+    if (g_sockfd < 0)
+    {
+        printf("socket failed\n");
+        exit(1);
+    }
+
+    printf("sockfd: %d\n", g_sockfd);
     for ( i = 0 ; i < argc ; i++ )
     {
         if ( 0 == strcmp(argv[i],"port") )
@@ -225,23 +186,62 @@ int main(int argc, char * argv[])
         }
     }
 
-    epfd = ff_epoll_create(0);
-    if (epfd < 0)
+    printf("port  :%d\n", port);
+
+    struct sockaddr_in my_addr;
+    
+    bzero(&my_addr, sizeof(my_addr));
+    
+    my_addr.sin_family      = AF_INET;
+    my_addr.sin_port        = htons(port);
+    my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    ret = ff_bind(g_sockfd, (struct linux_sockaddr *)&my_addr, sizeof(my_addr));
+    if (ret < 0) 
     {
-        printf("ff_epoll_create failed\n");
-        return -1;
+        printf("bind failed\n");
+        exit(1);
+    }
+
+    ret = ff_listen(g_sockfd, MAX_EVENTS);
+    if (ret < 0) 
+    {
+        printf("listen failed! ret=%d\n", ret);
+        exit(1);
     }
     
-    sockfd = newsocket(port);
-    if (sockfd < 0)
+    g_epollfd = ff_epoll_create(0);
+    if ( g_epollfd < 0 )
     {
-        printf("ff_socket failed\n");
-        return -1;
+        printf("epoll create failed\n");
+        exit(1);
     }
 
-    epolladd(sockfd);
+    ev.data.fd = g_sockfd;
+    ev.events  = EPOLLIN;
+    ret = ff_epoll_ctl(g_epollfd, EPOLL_CTL_ADD, g_sockfd, &ev);
+    if (ret < 0) 
+    {
+        printf("ss_epoll_ctl failed\n");
+        exit(1);
+    }
 
-    ff_run(loop, NULL);
+    return 0;
+}
+
+int main(int argc, char * argv[])
+{
+    pthread_t tid;
+    
+    ff_init(argc, argv);
+
+    sleep(2);
+
+    pthread_create(&tid, NULL, stat_display, NULL);
+
+    server_init(argc, argv);
+
+    ff_run(server_socket_process, NULL);
 
     return 0;
 }

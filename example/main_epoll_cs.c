@@ -13,53 +13,52 @@
 
 #include "ss_api.h"
 
-#define MAX_EVENTS 512
+
+#define MAX_EVENTS     512
 
 #define BUFF_MAX_LEN   4096
 
 int g_sockfd = -1;
 
-struct ss_buff_m g_buff_m = {NULL, NULL};
+struct ss_buff * g_buff_m;
 
-int stat_send_times    = 0;
-size_t stat_send_size  = 0;
-
-int stat_recv_times    = 0;
-size_t stat_recv_size  = 0;
+int g_stat_send_times    = 0;
+size_t g_stat_send_size  = 0;
+int g_stat_recv_times    = 0;
+size_t g_stat_recv_size  = 0;
 
 void * stat_display(void * arg) 
 {
     int send_times = 0;
     int recv_times = 0;
-
     size_t send_size = 0;
     size_t recv_size = 0;
 
-    send_times = stat_send_times;
-    recv_times = stat_recv_times;
-    send_size  = stat_send_size;
-    recv_size  = stat_recv_size;
+    send_times = g_stat_send_times;
+    recv_times = g_stat_recv_times;
+    send_size  = g_stat_send_size;
+    recv_size  = g_stat_recv_size;
     
     for (;;)
     {
         sleep(5);
 
-        if (( stat_send_times - send_times) != 0 )
+        if (( g_stat_send_times - send_times) != 0 )
         {
-            printf(" stat send times %d \n", (stat_send_times - send_times)/5 );
-            printf(" stat send size  %lu \n", (stat_send_size  - send_size )/5 );
+            printf(" stat send times %d \n", (g_stat_send_times - send_times)/5 );
+            printf(" stat send size  %lu \n", (g_stat_send_size  - send_size )/5 );
         }
 
-        if (( stat_recv_times - recv_times ) != 0 )
+        if (( g_stat_recv_times - recv_times ) != 0 )
         {
-            printf(" stat recv times %d \n", (stat_recv_times - recv_times)/5 );
-            printf(" stat recv size  %lu \n", (stat_recv_size  - recv_size )/5 );
+            printf(" stat recv times %d \n", (g_stat_recv_times - recv_times)/5 );
+            printf(" stat recv size  %lu \n", (g_stat_recv_size  - recv_size )/5 );
         }
 
-        send_times = stat_send_times;
-        recv_times = stat_recv_times;
-        send_size  = stat_send_size;
-        recv_size  = stat_recv_size;
+        send_times = g_stat_send_times;
+        recv_times = g_stat_recv_times;
+        send_size  = g_stat_send_size;
+        recv_size  = g_stat_recv_size;
     }
 }
 
@@ -82,7 +81,7 @@ void * server_socket_process(void * arg)
     ret = ss_epoll_ctl(epfd, EPOLL_CTL_ADD, g_sockfd, &ev);
     if (ret < 0) 
     {
-        printf("listen failed\n");
+        printf("ss_epoll_ctl failed\n");
         exit(1);
     }
 
@@ -100,7 +99,8 @@ void * server_socket_process(void * arg)
                 while (1) 
                 {
                     int nclientfd = ss_accept(g_sockfd, NULL, NULL);
-                    if (nclientfd < 0) {
+                    if (nclientfd < 0) 
+                    {
                         break;
                     }
         
@@ -119,8 +119,8 @@ void * server_socket_process(void * arg)
             else
             { 
                 char buf[BUFF_MAX_LEN];
-                ssize_t writelen = 0;
-                ssize_t readlen  = 0;
+                size_t writelen = 0;
+                size_t readlen  = 0;
 
                 if (events[i].events & EPOLLERR ) 
                 {
@@ -136,12 +136,11 @@ void * server_socket_process(void * arg)
                     readlen = ss_read( events[i].data.fd, buf, sizeof(buf));
                     if ( readlen > 0 )
                     {
-                        stat_recv_times++;
-                        stat_recv_size += readlen;
-                        ss_buff_m_write(&g_buff_m, buf, readlen);
+                        g_stat_recv_times++;
+                        g_stat_recv_size += readlen;
+                        ss_buff_write(g_buff_m, buf, readlen);
                     }
-
-                    if ( readlen < 0 ) 
+                    if ( readlen == 0 ) 
                     {
                         ss_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                         ss_close( events[i].data.fd);
@@ -151,34 +150,25 @@ void * server_socket_process(void * arg)
 
                 if (events[i].events & EPOLLOUT )
                 {
-                    /**/
-                    readlen = ss_buff_m_read(&g_buff_m, buf, sizeof(buf));
+                    readlen = ss_buff_read(g_buff_m, buf, sizeof(buf));
                     if ( readlen > 0 )
                     {
                         writelen = ss_write( events[i].data.fd, buf, readlen);
-                        stat_send_times++;
-                        stat_send_size += writelen;
-                    }
+                        g_stat_send_times++;
+                        g_stat_send_size += writelen;
 
-                    /*writelen = ss_write( events[i].data.fd, "helloworld!", sizeof("helloworld!") );
-                    
-                    stat_send_times++;
-                    stat_send_size += sizeof("helloworld!");*/
-
-                    if ( writelen < 0 ) 
-                    {
-                        ss_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
-                        ss_close( events[i].data.fd);
-                        printf("connect %d close.\n", events[i].data.fd);
+                        if ( writelen == 0 ) 
+                        {
+                            ss_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
+                            ss_close( events[i].data.fd);
+                            printf("connect %d close.\n", events[i].data.fd);
+                        }
                     }
                 }
             }
         }
     }
 }
-
-
-
 
 void * client_socket_process(void * arg)
 {
@@ -199,7 +189,7 @@ void * client_socket_process(void * arg)
     ret = ss_epoll_ctl(epfd, EPOLL_CTL_ADD, g_sockfd, &ev);
     if (ret < 0) 
     {
-        printf("listen failed\n");
+        printf("ss_epoll_ctl failed\n");
         exit(1);
     }
 
@@ -220,7 +210,6 @@ void * client_socket_process(void * arg)
                 /* Simply close socket */
                 ss_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                 ss_close(events[i].data.fd);
-    
                 printf("connect %d close.\n", events[i].data.fd);
             } 
 
@@ -229,12 +218,12 @@ void * client_socket_process(void * arg)
                 readlen = ss_read( events[i].data.fd, buf, sizeof(buf));
                 if ( readlen > 0 )
                 {
-                    stat_recv_times++;
-                    stat_recv_size += readlen;
-                    ss_buff_m_write(&g_buff_m, buf, readlen);
+                    g_stat_recv_times++;
+                    g_stat_recv_size += readlen;
+                    ss_buff_write(g_buff_m, buf, readlen);
                 }
                 
-                if ( readlen < 0 ) 
+                if ( readlen == 0 ) 
                 {
                     ss_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                     ss_close( events[i].data.fd);
@@ -244,21 +233,13 @@ void * client_socket_process(void * arg)
 
             if (events[i].events & EPOLLOUT )
             {
-                /**/
-                readlen = ss_buff_m_read(&g_buff_m, buf, sizeof(buf));
-                if ( readlen > 0 )
-                {
-                    stat_send_times++;
-                    stat_send_size += readlen;
-                    writelen = ss_write( events[i].data.fd, buf, readlen);
-                }
+                readlen = sprintf(buf, "helloworld! (client %d)\n", g_stat_send_times );
+                
+                g_stat_send_times++;
+                g_stat_send_size += readlen;
 
-                /*writelen = ss_write( events[i].data.fd, "helloworld!", sizeof("helloworld!") );
-
-                stat_send_times++;
-                stat_send_size += sizeof("helloworld!");*/
-                                
-                if ( writelen < 0 ) 
+                writelen = ss_write( events[i].data.fd, buf, readlen);
+                if ( writelen == 0 ) 
                 {
                     ss_epoll_ctl(epfd, EPOLL_CTL_DEL,  events[i].data.fd, NULL);
                     ss_close( events[i].data.fd);
@@ -276,6 +257,10 @@ int server_init(int argc, char * argv[])
     int i;
     short port;
     struct epoll_event ev;
+
+    pthread_t tid;
+
+    g_buff_m = (struct ss_buff *)malloc(sizeof(struct ss_buff));
     
     g_sockfd = ss_socket(AF_INET, SOCK_STREAM, 0);
     if (g_sockfd < 0)
@@ -311,9 +296,11 @@ int server_init(int argc, char * argv[])
     ret = ss_listen(g_sockfd, MAX_EVENTS);
     if (ret < 0) 
     {
-        printf("listen failed\n");
+        printf("listen failed! ret=%d\n", ret);
         exit(1);
     }
+    
+    pthread_create(&tid, NULL, stat_display, NULL);
 
     server_socket_process(NULL);
 
@@ -328,6 +315,10 @@ int client_init(int argc, char * argv[])
     
     short port;
     char * addr;
+
+    pthread_t tid;
+
+    g_buff_m = (struct ss_buff *)malloc(sizeof(struct ss_buff));
     
     g_sockfd = ss_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (g_sockfd < 0)
@@ -373,7 +364,7 @@ int client_init(int argc, char * argv[])
         exit(1);
     }
 
-    ss_write( g_sockfd, "helloworld!", sizeof("helloworld!") );
+    pthread_create(&tid, NULL, stat_display, NULL);
 
     client_socket_process(NULL);
 

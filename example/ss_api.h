@@ -24,38 +24,42 @@ extern "C" {
 #include <pthread.h>
 #include <semaphore.h>
 
+#include "ss_util.h"
 
-#define FF_MAX_EVENTS  512
-#define BUFF_MAX_LEN   4096
-
-#define SOCK_MAX_NUM   0xffff
-#define SOCK_REL_IDX   0xff00
-
+#define SS_BUFF_MAX_LEN   (2*1024*1024)
 
 struct ss_buff {
-    char   body[BUFF_MAX_LEN];
-    int    write;
     int    read;
-    struct ss_buff * pnext;
-};
-
-struct ss_buff_m {
-    struct ss_buff * pnext;
-    struct ss_buff * ptail;
+    int    write;
+    char   body[SS_BUFF_MAX_LEN];
 };
 
 
+#define SS_MAX_EVENTS  32
 
+#define SOCK_MAX_NUM   0xffff
+
+#define SOCK_FD_MASK   0xffff
+
+#define SOCK_REL_IDX   0xff00
+
+#define EPOLL_MAX_NUM  0xff
+
+struct ss_buff * ss_buff_alloc(void);
+
+void ss_buff_free(struct ss_buff * pbuff);
+
+ssize_t ss_buff_size(struct ss_buff * pbuff);
+ssize_t ss_buff_space(struct ss_buff * pbuff);
+
+
+/* buffer ¶ÁÐ´½Ó¿Ú */
 ssize_t ss_buff_read(struct ss_buff * pbuff, char *buf, size_t nbytes);
-ssize_t ss_buff_write(struct ss_buff * pbuff, const char *buf, size_t nbytes);
+ssize_t ss_buff_readv(struct ss_buff * pbuff, struct iovec *iov, int iovcnt);
 
-ssize_t ss_buff_m_read(struct ss_buff_m * pbuff, char *buf, size_t nbytes);
-ssize_t ss_buff_m_readv(struct ss_buff_m * pbuff, const struct iovec *iov, int iovcnt);
+ssize_t ss_buff_write(struct ss_buff * pbuff, char *buf, size_t nbytes);
+ssize_t ss_buff_writev(struct ss_buff * pbuff, struct iovec *iov, int iovcnt);
 
-ssize_t ss_buff_m_write(struct ss_buff_m * pbuff, const char *buf, size_t nbytes);
-ssize_t ss_buff_m_writev(struct ss_buff_m * pbuff, const struct iovec *iov, int iovcnt);
-
-void ss_buff_m_clean(struct ss_buff_m * pbuffm);
 
 
 int ss_socket(int domain, int type, int protocol);
@@ -87,6 +91,9 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
 
 void ss_run(void);
 int ss_init(int argc, char * argv[]);
+
+
+
 
 #ifdef __cplusplus
 }

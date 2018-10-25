@@ -20,3 +20,6 @@ do
 done
 
 #./helloworld_epoll --conf config.ini --proc-type=primary --proc-id=0 port 80
+
+#./helloworld_epoll_cs --conf config.ini --proc-type=primary --proc-id=0 server port 80
+#./helloworld_epoll_cs --conf config.ini --proc-type=primary --proc-id=0 client addr 192.168.0.121 port 80

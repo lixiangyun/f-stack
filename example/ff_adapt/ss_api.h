@@ -50,6 +50,7 @@ struct ss_buff * ss_buff_alloc(void);
 void ss_buff_free(struct ss_buff * pbuff);
 
 ssize_t ss_buff_size(struct ss_buff * pbuff);
+ssize_t ss_buff_space(struct ss_buff * pbuff);
 
 
 /* buffer ¶ÁÐ´½Ó¿Ú */

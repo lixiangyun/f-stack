@@ -392,7 +392,7 @@ int ss_epoll_create(int size)
     }
 
     timer.tv_sec  = 0;
-    timer.tv_nsec = 10*1000*1000;  // 1ms
+    timer.tv_nsec = 1*1000*1000;  // 1ms
     timerval.it_value    = timer;
     timerval.it_interval = timer;
 
@@ -465,6 +465,9 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
 
 int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int timeout)
 {
+    int event;
+    int fd;
+    
     int n,i,j = 0;
     int cnt;
     struct ss_epoll_ctrl_s * p_epoll;
@@ -478,6 +481,28 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
     
     p_epoll = &g_epoll_m[epfd - 10000];
     
+    for ( n = 0 ; n < EPOLL_MAX_NUM; n++ )
+    {
+        fd = p_epoll->sock_fd[n];
+        if ( fd == 0 )
+        {
+            continue;
+        }
+
+        event = ss_socket_m_event(fd);
+        if ( event > 0 )
+        {
+            pevents[j].events  = event;
+            pevents[j].data.fd = fd;
+            j++;
+        }
+    }
+
+    if ( j > 0 )
+    {
+        return j;
+    }
+
     cnt = epoll_wait(p_epoll->epoll_fd, events, SS_MAX_EVENTS, timeout);
     if ( 0 > cnt )
     {
@@ -486,9 +511,9 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
 
     for ( i = 0 ; i < cnt; i++ )
     {
-        int event  = events[i].events;
-        int fd     = events[i].data.fd;
-        
+        event  = events[i].events;
+        fd     = events[i].data.fd;
+
         if ( p_epoll->timer_fd == fd )
         {
             for ( n = 0 ; n < EPOLL_MAX_NUM; n++ )
