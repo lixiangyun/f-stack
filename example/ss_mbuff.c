@@ -38,7 +38,7 @@ ssize_t ss_buff_size(struct ss_buff * pbuff)
     }
     else
     {
-        return (ssize_t)(SS_BUFF_MAX_LEN - 1 + pbuff->write - pbuff->read);
+        return (ssize_t)(SS_BUFF_MAX_LEN + pbuff->write - pbuff->read);
     }
 }
 
