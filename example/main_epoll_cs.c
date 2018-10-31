@@ -270,7 +270,7 @@ int server_init(int argc, char * argv[])
 
     pthread_t tid;
 
-    g_buff_m = (struct ss_buff *)malloc(sizeof(struct ss_buff));
+    g_buff_m = ss_buff_alloc();
     
     g_sockfd = ss_socket(AF_INET, SOCK_STREAM, 0);
     if (g_sockfd < 0)

@@ -9,6 +9,11 @@ int ss_socket(int domain, int type, int protocol)
     struct ss_call_s ss_call;
     struct ss_parm_socket ss_parm;
 
+    if ( type & SOCK_NONBLOCK )
+    {
+        type &= ~SOCK_NONBLOCK;
+    }
+
     ss_parm.domain   = domain;
     ss_parm.protocol = protocol;
     ss_parm.type     = type;
@@ -236,17 +241,24 @@ int ss_accept(int s, struct sockaddr * paddr, socklen_t * paddrlen)
     if ( NULL == p_socket )
     {
         printf("socket free! %d\n", s);
+        errno = ECONNABORTED;
         return -1;
     }
-    
-    p_accept = p_socket->paccept;
-    if ( NULL == p_accept )
-    {
-        return -1;
-    }
-    
-    p_socket->paccept = p_accept->pnext;
 
+    for (;;)
+    {
+        p_accept = p_socket->paccept;
+        if ( NULL == p_accept )
+        {
+            errno = EAGAIN;
+            return -1;
+        }
+        if ( ss_atomic64_cas((long *)&(p_socket->paccept), (long)p_accept, (long)p_accept->pnext ) )
+        {
+            break;
+        }
+    }
+    
     if ( NULL != paddr )
     {
         memcpy(paddr, &p_accept->addr, p_accept->addrlen);
@@ -367,30 +379,26 @@ ssize_t ss_writev(int fd, const struct iovec *iov, int iovcnt)
     return cnt;
 }
 
-
 struct ss_epoll_ctrl_s {
     int epoll_fd;
-    int timer_fd;
     int sock_fd[EPOLL_MAX_NUM];
 };
 
-struct ss_epoll_ctrl_s g_epoll_m[EPOLL_MAX_NUM] = {0,0,{0}};
+struct ss_epoll_ctrl_s g_epoll_m[EPOLL_MAX_NUM] = {0,{0}};
 
 int ss_epoll_create(int size)
 {
-    int i, ret, epfd, tmfd;
-    struct itimerspec  timerval;
-    struct timespec    timer;
-    struct epoll_event event;
+    int i, epfd;
 
     for ( i = 0 ; i < EPOLL_MAX_NUM ; i++ )
     {
-        if ( 0 == g_epoll_m[i].epoll_fd )
+        if ( ss_atomic_cas(&g_epoll_m[i].epoll_fd, 0, 1) )
         {
             break;
         }
     }
 
+    errno = 0;
     epfd = epoll_create1(EPOLL_CLOEXEC);
     if ( epfd < 0 )
     {
@@ -398,37 +406,7 @@ int ss_epoll_create(int size)
         return -1;
     }
 
-    tmfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-    if (tmfd < 0)
-    {
-        printf("timer fd create failed! %d\n", errno );
-        return -1;
-    }
-
-    event.data.fd = tmfd;
-    event.events  = EPOLLIN | EPOLLERR;
-
-    ret = epoll_ctl(epfd, EPOLL_CTL_ADD, tmfd, &event);
-    if (0 != ret)
-    {
-        printf("epoll ctl failed! %d\n", errno );
-        return -1;
-    }
-
-    timer.tv_sec  = 0;
-    timer.tv_nsec = 1*1000*1000;  // 1ms
-    timerval.it_value    = timer;
-    timerval.it_interval = timer;
-
-    ret = timerfd_settime(tmfd, 0, &timerval, NULL);
-    if (0 != ret)
-    {
-        printf("set timeout failed! %d\n", errno );
-        return -1;
-    }
-
     g_epoll_m[i].epoll_fd = epfd;
-    g_epoll_m[i].timer_fd = tmfd;
 
     return 10000 + i;
 }
@@ -446,6 +424,7 @@ int ss_epoll_ctl(int epfd, int op, int fd, struct epoll_event * pevent)
     }
     
     p_epoll = &g_epoll_m[epfd - 10000];
+    errno = 0;
 
     if ( SOCK_REL_IDX <= ( fd & SOCK_FD_MASK ) )
     {
@@ -522,8 +501,7 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
 {
     int event;
     int fd;
-    
-    int n,i,j = 0;
+    int i;
     int cnt;
     struct ss_epoll_ctrl_s * p_epoll;
     struct epoll_event events[SS_MAX_EVENTS];
@@ -535,10 +513,21 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
     }
     
     p_epoll = &g_epoll_m[epfd - 10000];
-    
-    for ( n = 0 ; n < EPOLL_MAX_NUM; n++ )
+
+    errno = 0;
+    cnt = epoll_wait(p_epoll->epoll_fd, events, SS_MAX_EVENTS, 1);
+    if ( cnt > 0 )
     {
-        fd = p_epoll->sock_fd[n];
+        for ( i = 0 ; i < cnt; i++ )
+        {
+            pevents[i].events  = events[i].events;
+            pevents[i].data.fd = events[i].data.fd;
+        }
+    }
+
+    for ( i = 0 ; i < EPOLL_MAX_NUM; i++ )
+    {
+        fd = p_epoll->sock_fd[i];
         if ( fd == 0 )
         {
             continue;
@@ -547,56 +536,13 @@ int ss_epoll_wait(int epfd, struct epoll_event * pevents, int maxevents, int tim
         event = ss_socket_m_event(fd);
         if ( event > 0 )
         {
-            pevents[j].events  = event;
-            pevents[j].data.fd = fd;
-            j++;
+            pevents[cnt].events  = event;
+            pevents[cnt].data.fd = fd;
+            cnt++;
         }
     }
 
-    if ( j > 0 )
-    {
-        return j;
-    }
-
-    cnt = epoll_wait(p_epoll->epoll_fd, events, SS_MAX_EVENTS, timeout);
-    if ( 0 > cnt )
-    {
-        return -1;
-    }
-
-    for ( i = 0 ; i < cnt; i++ )
-    {
-        event  = events[i].events;
-        fd     = events[i].data.fd;
-
-        if ( p_epoll->timer_fd == fd )
-        {
-            for ( n = 0 ; n < EPOLL_MAX_NUM; n++ )
-            {
-                fd = p_epoll->sock_fd[n];
-                if ( fd == 0 )
-                {
-                    continue;
-                }
-
-                event = ss_socket_m_event(fd);
-                if ( event > 0 )
-                {
-                    pevents[j].events  = event;
-                    pevents[j].data.fd = fd;
-                    j++;
-                }
-            }
-        }
-        else
-        {
-            pevents[j].events  = event;
-            pevents[j].data.fd = fd;
-            j++;
-        }
-    }
-
-    return j;
+    return cnt;
 }
 
 

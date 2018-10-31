@@ -1,3 +1,5 @@
+#ifndef _SS_UTIL_H
+#define _SS_UTIL_H
 
 #ifdef __cplusplus
 #if __cplusplus
@@ -5,8 +7,7 @@ extern "C"{
 #endif
 #endif /* __cplusplus */
 
-struct ss_list
-{
+struct ss_list {
     struct ss_list * next;
     struct ss_list * prev;
 };
@@ -62,4 +63,5 @@ int ss_atomic64_cas(long * pAddr, long valueold, long valuenew);
 #endif
 #endif /* __cplusplus */
 
+#endif
 

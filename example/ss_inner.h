@@ -25,6 +25,7 @@ extern "C" {
 #include <semaphore.h>
 
 #include "ss_api.h"
+#include "ss_util.h"
 
 #define SS_USED_FLAG  0x1
 #define SS_SOCK_TYPE  0x2
@@ -46,6 +47,7 @@ struct ss_socket_m {
     int idx;
     int ref;
     int sockfd;
+    int ctl_ref;
 
     struct ss_accept_s * paccept;
     struct ss_buff * pread;
